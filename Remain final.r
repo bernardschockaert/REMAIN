@@ -835,6 +835,19 @@ hr_365d_agreed_adj <- exp(coef(cox_365d_agreed_full)["PMI_typeNoncardiac"])
 ci_365d_agreed_adj <- exp(confint(cox_365d_agreed_full)["PMI_typeNoncardiac",])
 p_365d_agreed_adj <- summary(cox_365d_agreed_full)$coefficients["PMI_typeNoncardiac", "Pr(>|z|)"]
 
+# Extract UNADJUSTED HRs for display on plots
+hr_30d_obs12_unadj_plot <- exp(coef(cox_30d_obs12_unadj)["PMI_typeNoncardiac"])
+ci_30d_obs12_unadj_plot <- exp(confint(cox_30d_obs12_unadj)["PMI_typeNoncardiac",])
+
+hr_365d_obs12_unadj_plot <- exp(coef(cox_365d_obs12_unadj)["PMI_typeNoncardiac"])
+ci_365d_obs12_unadj_plot <- exp(confint(cox_365d_obs12_unadj)["PMI_typeNoncardiac",])
+
+hr_30d_agreed_unadj_plot <- exp(coef(cox_30d_agreed_unadj)["PMI_typeNoncardiac"])
+ci_30d_agreed_unadj_plot <- exp(confint(cox_30d_agreed_unadj)["PMI_typeNoncardiac",])
+
+hr_365d_agreed_unadj_plot <- exp(coef(cox_365d_agreed_unadj)["PMI_typeNoncardiac"])
+ci_365d_agreed_unadj_plot <- exp(confint(cox_365d_agreed_unadj)["PMI_typeNoncardiac",])
+
 # Extract HRs
 extract_hr <- function(model, model_name, outcome, dataset) {
   coef_name <- "PMI_typeNoncardiac"
@@ -868,9 +881,9 @@ hr_table <- bind_rows(
 cat("\n=== HAZARD RATIOS: Noncardiac vs Cardiac ===\n")
 print(hr_table)
 
-# ========== KAPLAN-MEIER CURVES: CARDIAC vs NONCARDIAC WITH ADJUSTED HR ==========
+# ========== KAPLAN-MEIER CURVES: CARDIAC vs NONCARDIAC WITH UNADJUSTED HR ==========
 
-cat("\n\n=== KAPLAN-MEIER CURVES: CARDIAC vs NONCARDIAC (with Adjusted HR) ===\n\n")
+cat("\n\n=== KAPLAN-MEIER CURVES: CARDIAC vs NONCARDIAC (with Unadjusted HR) ===\n\n")
 
 # OBS12 - 30-day survival
 cat("--- 30-Day Survival: Cardiac vs Noncardiac (OBS12) ---\n")
@@ -881,9 +894,8 @@ survdiff_30d_obs12 <- survdiff(surv_obj_30d_obs12 ~ PMI_type, data = obs12_with_
 
 pval_label_30d_obs12 <- paste0(
   "Log-rank p = ", format.pval(survdiff_30d_obs12$pvalue, digits = 3),
-  "\nAdjusted HR = ", round(hr_30d_obs12_adj, 2),
-  " (95% CI: ", round(ci_30d_obs12_adj[1], 2), "-", round(ci_30d_obs12_adj[2], 2), ")",
-  "\nAdjusted p = ", format.pval(p_30d_obs12_adj, digits = 3)
+  "\nUnadjusted HR = ", round(hr_30d_obs12_unadj_plot, 2),
+  " (95% CI: ", round(ci_30d_obs12_unadj_plot[1], 2), "-", round(ci_30d_obs12_unadj_plot[2], 2), ")"
 )
 
 ggsurvplot(
@@ -911,9 +923,8 @@ survdiff_365d_obs12 <- survdiff(surv_obj_365d_obs12 ~ PMI_type, data = obs12_wit
 
 pval_label_365d_obs12 <- paste0(
   "Log-rank p = ", format.pval(survdiff_365d_obs12$pvalue, digits = 3),
-  "\nAdjusted HR = ", round(hr_365d_obs12_adj, 2),
-  " (95% CI: ", round(ci_365d_obs12_adj[1], 2), "-", round(ci_365d_obs12_adj[2], 2), ")",
-  "\nAdjusted p = ", format.pval(p_365d_obs12_adj, digits = 3)
+  "\nUnadjusted HR = ", round(hr_365d_obs12_unadj_plot, 2),
+  " (95% CI: ", round(ci_365d_obs12_unadj_plot[1], 2), "-", round(ci_365d_obs12_unadj_plot[2], 2), ")"
 )
 
 ggsurvplot(
@@ -928,7 +939,7 @@ ggsurvplot(
   title = "365-Day Survival: Cardiac vs Noncardiac PMI (OBS12)",
   legend.title = "PMI Type",
   legend.labs = c("Cardiac", "Noncardiac"),
-  break.time.by = 60,
+  break.time.by = 30,
   palette = c("#E7B800", "#2E9FDF")
 )
 
@@ -941,9 +952,8 @@ survdiff_30d_agreed <- survdiff(surv_obj_30d_agreed ~ PMI_type, data = agreed_su
 
 pval_label_30d_agreed <- paste0(
   "Log-rank p = ", format.pval(survdiff_30d_agreed$pvalue, digits = 3),
-  "\nAdjusted HR = ", round(hr_30d_agreed_adj, 2),
-  " (95% CI: ", round(ci_30d_agreed_adj[1], 2), "-", round(ci_30d_agreed_adj[2], 2), ")",
-  "\nAdjusted p = ", format.pval(p_30d_agreed_adj, digits = 3)
+  "\nUnadjusted HR = ", round(hr_30d_agreed_unadj_plot, 2),
+  " (95% CI: ", round(ci_30d_agreed_unadj_plot[1], 2), "-", round(ci_30d_agreed_unadj_plot[2], 2), ")"
 )
 
 ggsurvplot(
@@ -971,9 +981,8 @@ survdiff_365d_agreed <- survdiff(surv_obj_365d_agreed ~ PMI_type, data = agreed_
 
 pval_label_365d_agreed <- paste0(
   "Log-rank p = ", format.pval(survdiff_365d_agreed$pvalue, digits = 3),
-  "\nAdjusted HR = ", round(hr_365d_agreed_adj, 2),
-  " (95% CI: ", round(ci_365d_agreed_adj[1], 2), "-", round(ci_365d_agreed_adj[2], 2), ")",
-  "\nAdjusted p = ", format.pval(p_365d_agreed_adj, digits = 3)
+  "\nUnadjusted HR = ", round(hr_365d_agreed_unadj_plot, 2),
+  " (95% CI: ", round(ci_365d_agreed_unadj_plot[1], 2), "-", round(ci_365d_agreed_unadj_plot[2], 2), ")"
 )
 
 ggsurvplot(
@@ -988,18 +997,19 @@ ggsurvplot(
   title = "365-Day Survival: Cardiac vs Noncardiac PMI (Agreed Cases)",
   legend.title = "PMI Type",
   legend.labs = c("Cardiac", "Noncardiac"),
-  break.time.by = 60,
+  break.time.by = 30,
   palette = c("#E7B800", "#2E9FDF")
 )
 
 cat("\n=== ANALYSIS COMPLETE ===\n")
 cat("\n✓ Comparison table: OBS12 vs Agreed PMI categories\n")
 cat("✓ PMI category overviews (noncardiac, cardiac, T2MI)\n")
-cat("✓ Cardiac vs Noncardiac KM curves (30d & 365d) with adjusted HR\n")
-cat("✓ PMI category KM curves (30d) with 95% CI and adjusted HR\n")
+cat("✓ Cardiac vs Noncardiac KM curves (30d & 365d) with UNADJUSTED HR and log-rank p-value\n")
+cat("✓ 365-day KM curves show 30-day mark (break.time.by = 30)\n")
+cat("✓ PMI category KM curves (30d) with 95% CI\n")
 cat("✓ Surgical specialty analysis with p-values for cardiac vs noncardiac\n")
 cat("✓ T2MI with vs without cause KM curves (30d & 365d)\n")
 cat("✓ Baseline characteristics tables\n")
-cat("✓ **NEW: Surgical specialty p-values integrated into OBS12 and Agreed tables**\n")
-cat("✓ Cox regression with adjusted HR\n")
+cat("✓ Surgical specialty p-values integrated into OBS12 and Agreed tables\n")
+cat("✓ Cox regression with both unadjusted and adjusted HR\n")
 cat("✓ UNIFORM Date from data_included used for all survival calculations\n")
