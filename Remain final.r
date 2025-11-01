@@ -881,51 +881,68 @@ hr_table <- bind_rows(
 cat("\n=== HAZARD RATIOS: Noncardiac vs Cardiac ===\n")
 print(hr_table)
 
-# ========== KAPLAN-MEIER CURVES: CARDIAC vs NONCARDIAC WITH LOG-RANK TEST AND COX HR ==========
+# ========== KAPLAN-MEIER CURVES: CARDIAC vs NONCARDIAC WITH LOG-RANK TEST ==========
 
 cat("\n\n=== KAPLAN-MEIER CURVES: CARDIAC vs NONCARDIAC ===\n")
-cat("(Log-rank test for curve comparison + Cox model for unadjusted HR)\n\n")
+cat("(Log-rank Mantel-Cox test for curve comparison)\n\n")
 
-# OBS12 - 30-day survival
-cat("--- 30-Day Survival: Cardiac vs Noncardiac (OBS12) ---\n")
-surv_obj_30d_obs12 <- Surv(time = obs12_with_pmi$survival_time_30d, 
-                            event = obs12_with_pmi$death_30d)
-fit_30d_obs12 <- survfit(surv_obj_30d_obs12 ~ PMI_type, data = obs12_with_pmi)
-survdiff_30d_obs12 <- survdiff(surv_obj_30d_obs12 ~ PMI_type, data = obs12_with_pmi)
+# ========== MORTALITY VERIFICATION: Check table vs KM curve consistency ==========
 
-pval_label_30d_obs12 <- paste0(
-  "Log-rank χ² = ", round(survdiff_30d_obs12$chisq, 2), ", p = ", format.pval(survdiff_30d_obs12$pvalue, digits = 3),
-  "\nCox unadjusted HR = ", round(hr_30d_obs12_unadj_plot, 2),
-  " (95% CI: ", round(ci_30d_obs12_unadj_plot[1], 2), "-", round(ci_30d_obs12_unadj_plot[2], 2), ")"
-)
+cat("\n--- MORTALITY VERIFICATION: Table vs KM Curve Comparison ---\n\n")
 
-ggsurvplot(
-  fit_30d_obs12,
-  data = obs12_with_pmi,
-  risk.table = TRUE,
-  pval = pval_label_30d_obs12,
-  conf.int = TRUE,
-  xlim = c(0, 30),
-  xlab = "Time (days)",
-  ylab = "Survival probability",
-  title = "30-Day Survival: Cardiac vs Noncardiac PMI (OBS12)",
-  legend.title = "PMI Type",
-  legend.labs = c("Cardiac", "Noncardiac"),
-  break.time.by = 5,
-  palette = c("#E7B800", "#2E9FDF")
-)
+# OBS12 mortality check
+cat("OBS12 - Mortality consistency check:\n")
+cat("Total patients in obs12_with_pmi:", nrow(obs12_with_pmi), "\n")
+cat("30-day deaths (from death_30d variable):", sum(obs12_with_pmi$death_30d, na.rm = TRUE), "\n")
+cat("365-day deaths (from death_365d variable):", sum(obs12_with_pmi$death_365d, na.rm = TRUE), "\n")
 
-# OBS12 - 365-day survival
-cat("\n--- 365-Day Survival: Cardiac vs Noncardiac (OBS12) ---\n")
+obs12_mortality_by_group <- obs12_with_pmi %>%
+  group_by(PMI_type) %>%
+  summarise(
+    N = n(),
+    Deaths_30d = sum(death_30d, na.rm = TRUE),
+    Mortality_30d_pct = round(Deaths_30d / N * 100, 1),
+    Deaths_365d = sum(death_365d, na.rm = TRUE),
+    Mortality_365d_pct = round(Deaths_365d / N * 100, 1)
+  )
+
+cat("\nOBS12 by PMI type:\n")
+print(obs12_mortality_by_group)
+
+# Agreed cases mortality check
+cat("\n\nAgreed Cases - Mortality consistency check:\n")
+cat("Total patients in agreed_survival:", nrow(agreed_survival), "\n")
+cat("30-day deaths (from death_30d variable):", sum(agreed_survival$death_30d, na.rm = TRUE), "\n")
+cat("365-day deaths (from death_365d variable):", sum(agreed_survival$death_365d, na.rm = TRUE), "\n")
+
+agreed_mortality_by_group <- agreed_survival %>%
+  group_by(PMI_type) %>%
+  summarise(
+    N = n(),
+    Deaths_30d = sum(death_30d, na.rm = TRUE),
+    Mortality_30d_pct = round(Deaths_30d / N * 100, 1),
+    Deaths_365d = sum(death_365d, na.rm = TRUE),
+    Mortality_365d_pct = round(Deaths_365d / N * 100, 1)
+  )
+
+cat("\nAgreed cases by PMI type:\n")
+print(agreed_mortality_by_group)
+
+cat("\n\nNote: These numbers should match what appears in the baseline tables and KM curves.\n")
+cat("If there's a discrepancy, it may be due to:\n")
+cat("  1. Different datasets being used (check distinct() filtering)\n")
+cat("  2. Missing data in survival time or event variables\n")
+cat("  3. Date calculation issues\n\n")
+
+# OBS12 - 365-day survival (includes 30-day mark on x-axis)
+cat("\n--- 365-Day Survival (with 30-day mark): Cardiac vs Noncardiac (OBS12) ---\n")
 surv_obj_365d_obs12 <- Surv(time = obs12_with_pmi$survival_time_365d, 
                              event = obs12_with_pmi$death_365d)
 fit_365d_obs12 <- survfit(surv_obj_365d_obs12 ~ PMI_type, data = obs12_with_pmi)
 survdiff_365d_obs12 <- survdiff(surv_obj_365d_obs12 ~ PMI_type, data = obs12_with_pmi)
 
 pval_label_365d_obs12 <- paste0(
-  "Log-rank χ² = ", round(survdiff_365d_obs12$chisq, 2), ", p = ", format.pval(survdiff_365d_obs12$pvalue, digits = 3),
-  "\nCox unadjusted HR = ", round(hr_365d_obs12_unadj_plot, 2),
-  " (95% CI: ", round(ci_365d_obs12_unadj_plot[1], 2), "-", round(ci_365d_obs12_unadj_plot[2], 2), ")"
+  "Log-rank χ² = ", round(survdiff_365d_obs12$chisq, 2), ", p = ", format.pval(survdiff_365d_obs12$pvalue, digits = 3)
 )
 
 ggsurvplot(
@@ -944,46 +961,15 @@ ggsurvplot(
   palette = c("#E7B800", "#2E9FDF")
 )
 
-# Agreed cases - 30-day survival
-cat("\n--- 30-Day Survival: Cardiac vs Noncardiac (Agreed Cases) ---\n")
-surv_obj_30d_agreed <- Surv(time = agreed_survival$survival_time_30d, 
-                             event = agreed_survival$death_30d)
-fit_30d_agreed <- survfit(surv_obj_30d_agreed ~ PMI_type, data = agreed_survival)
-survdiff_30d_agreed <- survdiff(surv_obj_30d_agreed ~ PMI_type, data = agreed_survival)
-
-pval_label_30d_agreed <- paste0(
-  "Log-rank χ² = ", round(survdiff_30d_agreed$chisq, 2), ", p = ", format.pval(survdiff_30d_agreed$pvalue, digits = 3),
-  "\nCox unadjusted HR = ", round(hr_30d_agreed_unadj_plot, 2),
-  " (95% CI: ", round(ci_30d_agreed_unadj_plot[1], 2), "-", round(ci_30d_agreed_unadj_plot[2], 2), ")"
-)
-
-ggsurvplot(
-  fit_30d_agreed,
-  data = agreed_survival,
-  risk.table = TRUE,
-  pval = pval_label_30d_agreed,
-  conf.int = TRUE,
-  xlim = c(0, 30),
-  xlab = "Time (days)",
-  ylab = "Survival probability",
-  title = "30-Day Survival: Cardiac vs Noncardiac PMI (Agreed Cases)",
-  legend.title = "PMI Type",
-  legend.labs = c("Cardiac", "Noncardiac"),
-  break.time.by = 5,
-  palette = c("#E7B800", "#2E9FDF")
-)
-
-# Agreed cases - 365-day survival
-cat("\n--- 365-Day Survival: Cardiac vs Noncardiac (Agreed Cases) ---\n")
+# Agreed cases - 365-day survival (includes 30-day mark on x-axis)
+cat("\n--- 365-Day Survival (with 30-day mark): Cardiac vs Noncardiac (Agreed Cases) ---\n")
 surv_obj_365d_agreed <- Surv(time = agreed_survival$survival_time_365d, 
                               event = agreed_survival$death_365d)
 fit_365d_agreed <- survfit(surv_obj_365d_agreed ~ PMI_type, data = agreed_survival)
 survdiff_365d_agreed <- survdiff(surv_obj_365d_agreed ~ PMI_type, data = agreed_survival)
 
 pval_label_365d_agreed <- paste0(
-  "Log-rank χ² = ", round(survdiff_365d_agreed$chisq, 2), ", p = ", format.pval(survdiff_365d_agreed$pvalue, digits = 3),
-  "\nCox unadjusted HR = ", round(hr_365d_agreed_unadj_plot, 2),
-  " (95% CI: ", round(ci_365d_agreed_unadj_plot[1], 2), "-", round(ci_365d_agreed_unadj_plot[2], 2), ")"
+  "Log-rank χ² = ", round(survdiff_365d_agreed$chisq, 2), ", p = ", format.pval(survdiff_365d_agreed$pvalue, digits = 3)
 )
 
 ggsurvplot(
@@ -1005,15 +991,16 @@ ggsurvplot(
 cat("\n=== ANALYSIS COMPLETE ===\n")
 cat("\n✓ Comparison table: OBS12 vs Agreed PMI categories\n")
 cat("✓ PMI category overviews (noncardiac, cardiac, T2MI)\n")
-cat("✓ Cardiac vs Noncardiac KM curves (30d & 365d) with:\n")
-cat("  - Log-rank (Mantel-Cox) χ² and p-value for curve comparison\n")
-cat("  - Cox unadjusted HR with 95% CI for effect size\n")
-cat("✓ 365-day KM curves show 30-day mark (break.time.by = 30)\n")
+cat("✓ Mortality verification: Table vs KM curve consistency check\n")
+cat("✓ Cardiac vs Noncardiac 365-day KM curves with:\n")
+cat("  - Log-rank (Mantel-Cox) χ² and p-value ONLY\n")
+cat("  - 30-day mark visible on x-axis (break.time.by = 30)\n")
+cat("  - Separate 30-day curves removed (redundant)\n")
 cat("✓ PMI category KM curves (30d) with 95% CI\n")
 cat("✓ Surgical specialty analysis with p-values for cardiac vs noncardiac\n")
 cat("✓ T2MI with vs without cause KM curves (30d & 365d)\n")
 cat("✓ Baseline characteristics tables\n")
 cat("✓ Surgical specialty p-values integrated into OBS12 and Agreed tables\n")
-cat("✓ Cox regression with both unadjusted and adjusted HR\n")
+cat("✓ Cox regression table with both unadjusted and adjusted HR (separate from KM curves)\n")
 cat("✓ UNIFORM Date from data_included used for all survival calculations\n")
-cat("\nNote: Log-rank test and Cox model are distinct but related analyses.\n")
+cat("\nNote: KM curves show ONLY log-rank test (no Cox HR on plots).\n")
