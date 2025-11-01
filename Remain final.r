@@ -881,9 +881,10 @@ hr_table <- bind_rows(
 cat("\n=== HAZARD RATIOS: Noncardiac vs Cardiac ===\n")
 print(hr_table)
 
-# ========== KAPLAN-MEIER CURVES: CARDIAC vs NONCARDIAC WITH UNADJUSTED HR ==========
+# ========== KAPLAN-MEIER CURVES: CARDIAC vs NONCARDIAC WITH LOG-RANK TEST AND COX HR ==========
 
-cat("\n\n=== KAPLAN-MEIER CURVES: CARDIAC vs NONCARDIAC (with Unadjusted HR) ===\n\n")
+cat("\n\n=== KAPLAN-MEIER CURVES: CARDIAC vs NONCARDIAC ===\n")
+cat("(Log-rank test for curve comparison + Cox model for unadjusted HR)\n\n")
 
 # OBS12 - 30-day survival
 cat("--- 30-Day Survival: Cardiac vs Noncardiac (OBS12) ---\n")
@@ -893,8 +894,8 @@ fit_30d_obs12 <- survfit(surv_obj_30d_obs12 ~ PMI_type, data = obs12_with_pmi)
 survdiff_30d_obs12 <- survdiff(surv_obj_30d_obs12 ~ PMI_type, data = obs12_with_pmi)
 
 pval_label_30d_obs12 <- paste0(
-  "Log-rank p = ", format.pval(survdiff_30d_obs12$pvalue, digits = 3),
-  "\nUnadjusted HR = ", round(hr_30d_obs12_unadj_plot, 2),
+  "Log-rank χ² = ", round(survdiff_30d_obs12$chisq, 2), ", p = ", format.pval(survdiff_30d_obs12$pvalue, digits = 3),
+  "\nCox unadjusted HR = ", round(hr_30d_obs12_unadj_plot, 2),
   " (95% CI: ", round(ci_30d_obs12_unadj_plot[1], 2), "-", round(ci_30d_obs12_unadj_plot[2], 2), ")"
 )
 
@@ -922,8 +923,8 @@ fit_365d_obs12 <- survfit(surv_obj_365d_obs12 ~ PMI_type, data = obs12_with_pmi)
 survdiff_365d_obs12 <- survdiff(surv_obj_365d_obs12 ~ PMI_type, data = obs12_with_pmi)
 
 pval_label_365d_obs12 <- paste0(
-  "Log-rank p = ", format.pval(survdiff_365d_obs12$pvalue, digits = 3),
-  "\nUnadjusted HR = ", round(hr_365d_obs12_unadj_plot, 2),
+  "Log-rank χ² = ", round(survdiff_365d_obs12$chisq, 2), ", p = ", format.pval(survdiff_365d_obs12$pvalue, digits = 3),
+  "\nCox unadjusted HR = ", round(hr_365d_obs12_unadj_plot, 2),
   " (95% CI: ", round(ci_365d_obs12_unadj_plot[1], 2), "-", round(ci_365d_obs12_unadj_plot[2], 2), ")"
 )
 
@@ -951,8 +952,8 @@ fit_30d_agreed <- survfit(surv_obj_30d_agreed ~ PMI_type, data = agreed_survival
 survdiff_30d_agreed <- survdiff(surv_obj_30d_agreed ~ PMI_type, data = agreed_survival)
 
 pval_label_30d_agreed <- paste0(
-  "Log-rank p = ", format.pval(survdiff_30d_agreed$pvalue, digits = 3),
-  "\nUnadjusted HR = ", round(hr_30d_agreed_unadj_plot, 2),
+  "Log-rank χ² = ", round(survdiff_30d_agreed$chisq, 2), ", p = ", format.pval(survdiff_30d_agreed$pvalue, digits = 3),
+  "\nCox unadjusted HR = ", round(hr_30d_agreed_unadj_plot, 2),
   " (95% CI: ", round(ci_30d_agreed_unadj_plot[1], 2), "-", round(ci_30d_agreed_unadj_plot[2], 2), ")"
 )
 
@@ -980,8 +981,8 @@ fit_365d_agreed <- survfit(surv_obj_365d_agreed ~ PMI_type, data = agreed_surviv
 survdiff_365d_agreed <- survdiff(surv_obj_365d_agreed ~ PMI_type, data = agreed_survival)
 
 pval_label_365d_agreed <- paste0(
-  "Log-rank p = ", format.pval(survdiff_365d_agreed$pvalue, digits = 3),
-  "\nUnadjusted HR = ", round(hr_365d_agreed_unadj_plot, 2),
+  "Log-rank χ² = ", round(survdiff_365d_agreed$chisq, 2), ", p = ", format.pval(survdiff_365d_agreed$pvalue, digits = 3),
+  "\nCox unadjusted HR = ", round(hr_365d_agreed_unadj_plot, 2),
   " (95% CI: ", round(ci_365d_agreed_unadj_plot[1], 2), "-", round(ci_365d_agreed_unadj_plot[2], 2), ")"
 )
 
@@ -1004,7 +1005,9 @@ ggsurvplot(
 cat("\n=== ANALYSIS COMPLETE ===\n")
 cat("\n✓ Comparison table: OBS12 vs Agreed PMI categories\n")
 cat("✓ PMI category overviews (noncardiac, cardiac, T2MI)\n")
-cat("✓ Cardiac vs Noncardiac KM curves (30d & 365d) with UNADJUSTED HR and log-rank p-value\n")
+cat("✓ Cardiac vs Noncardiac KM curves (30d & 365d) with:\n")
+cat("  - Log-rank (Mantel-Cox) χ² and p-value for curve comparison\n")
+cat("  - Cox unadjusted HR with 95% CI for effect size\n")
 cat("✓ 365-day KM curves show 30-day mark (break.time.by = 30)\n")
 cat("✓ PMI category KM curves (30d) with 95% CI\n")
 cat("✓ Surgical specialty analysis with p-values for cardiac vs noncardiac\n")
@@ -1013,3 +1016,4 @@ cat("✓ Baseline characteristics tables\n")
 cat("✓ Surgical specialty p-values integrated into OBS12 and Agreed tables\n")
 cat("✓ Cox regression with both unadjusted and adjusted HR\n")
 cat("✓ UNIFORM Date from data_included used for all survival calculations\n")
+cat("\nNote: Log-rank test and Cox model are distinct but related analyses.\n")
