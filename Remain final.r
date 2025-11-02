@@ -723,23 +723,77 @@ cat_vars <- c("gender_display", "emergency_surg", "surg_specialty",
 
 # Table 1: All included patients
 cat("\n=== TABLE 1: ALL INCLUDED PATIENTS ===\n")
-table1_all <- CreateTableOne(vars = vars_for_table,
-                              data = all_patients,
-                              factorVars = cat_vars,
+
+# Create clear mortality labels
+all_patients_with_labels <- all_patients %>%
+  mutate(
+    Mortality_30d = factor(death_30d, levels = c(0, 1), labels = c("Alive", "Died")),
+    Mortality_365d = factor(death_365d, levels = c(0, 1), labels = c("Alive", "Died"))
+  )
+
+vars_for_table1 <- c("leeftijd", "gender_display", "emergency_surg", "surg_specialty",
+                     "history#Coronary Artery Disease", "history#Myocardial Infarction",
+                     "history#Pheripheral Artery Disease", "history#Stroke / TIA",
+                     "history#Chronic Heart Failure", "history#Atrial Fibrilation",
+                     "history#Moderate/Severe Valvular Disease", "history#Diabetus Mellitus, non-insulin",
+                     "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
+                     "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease",
+                     "RCRI_score", "Mortality_30d", "Mortality_365d")
+
+cat_vars1 <- c("gender_display", "emergency_surg", "surg_specialty",
+               "history#Coronary Artery Disease", "history#Myocardial Infarction",
+               "history#Pheripheral Artery Disease", "history#Stroke / TIA",
+               "history#Chronic Heart Failure", "history#Atrial Fibrilation",
+               "history#Moderate/Severe Valvular Disease", "history#Diabetus Mellitus, non-insulin",
+               "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
+               "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease",
+               "Mortality_30d", "Mortality_365d")
+
+table1_all <- CreateTableOne(vars = vars_for_table1,
+                              data = all_patients_with_labels,
+                              factorVars = cat_vars1,
                               test = FALSE)
 print(table1_all, nonnormal = nonnormal_vars, showAllLevels = TRUE, formatOptions = list(big.mark = ","))
+
+cat("\nIMPORTANT: Mortality is shown as 'Mortality_30d = Died' and 'Mortality_365d = Died'\n")
 
 # Table 2: OBS12 - Cardiac vs Noncardiac
 cat("\n\n=== TABLE 2: OBS12 - CARDIAC vs NONCARDIAC PMI ===\n")
 obs12_with_pmi_grouped <- obs12_with_pmi %>%
-  mutate(PMI_type = factor(PMI_type, levels = c("Cardiac", "Noncardiac")))
+  mutate(
+    PMI_type = factor(PMI_type, levels = c("Cardiac", "Noncardiac")),
+    # Create factor variables for mortality with clear labels
+    Mortality_30d = factor(death_30d, levels = c(0, 1), labels = c("Alive", "Died")),
+    Mortality_365d = factor(death_365d, levels = c(0, 1), labels = c("Alive", "Died"))
+  )
 
-table2_obs12 <- CreateTableOne(vars = vars_for_table,
+# Update vars list to use the new factor variables
+vars_for_table2_obs12 <- c("leeftijd", "gender_display", "emergency_surg", "surg_specialty",
+                           "history#Coronary Artery Disease", "history#Myocardial Infarction",
+                           "history#Pheripheral Artery Disease", "history#Stroke / TIA",
+                           "history#Chronic Heart Failure", "history#Atrial Fibrilation",
+                           "history#Moderate/Severe Valvular Disease", "history#Diabetus Mellitus, non-insulin",
+                           "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
+                           "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease",
+                           "RCRI_score", "Mortality_30d", "Mortality_365d")
+
+cat_vars2_obs12 <- c("gender_display", "emergency_surg", "surg_specialty",
+                     "history#Coronary Artery Disease", "history#Myocardial Infarction",
+                     "history#Pheripheral Artery Disease", "history#Stroke / TIA",
+                     "history#Chronic Heart Failure", "history#Atrial Fibrilation",
+                     "history#Moderate/Severe Valvular Disease", "history#Diabetus Mellitus, non-insulin",
+                     "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
+                     "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease",
+                     "Mortality_30d", "Mortality_365d")
+
+table2_obs12 <- CreateTableOne(vars = vars_for_table2_obs12,
                                 strata = "PMI_type",
                                 data = obs12_with_pmi_grouped,
-                                factorVars = cat_vars,
+                                factorVars = cat_vars2_obs12,
                                 test = TRUE)
 print(table2_obs12, nonnormal = nonnormal_vars, showAllLevels = TRUE, formatOptions = list(big.mark = ","))
+
+cat("\nIMPORTANT: Mortality is shown as 'Mortality_30d = Died' and 'Mortality_365d = Died'\n")
 
 # **NEW: Add surgical specialty p-values for OBS12**
 cat("\n\n--- SURGICAL SPECIALTY P-VALUES FOR OBS12 ---\n")
@@ -759,14 +813,40 @@ cat("\nNote: Fisher's exact test is used when N < 20; Chi-square test otherwise.
 # Table 3: Agreed cases - Cardiac vs Noncardiac
 cat("\n\n=== TABLE 3: AGREED CASES - CARDIAC vs NONCARDIAC PMI ===\n")
 agreed_survival_grouped <- agreed_survival %>%
-  mutate(PMI_type = factor(PMI_type, levels = c("Cardiac", "Noncardiac")))
+  mutate(
+    PMI_type = factor(PMI_type, levels = c("Cardiac", "Noncardiac")),
+    # Create factor variables for mortality with clear labels
+    Mortality_30d = factor(death_30d, levels = c(0, 1), labels = c("Alive", "Died")),
+    Mortality_365d = factor(death_365d, levels = c(0, 1), labels = c("Alive", "Died"))
+  )
 
-table3_agreed <- CreateTableOne(vars = vars_for_table,
+# Update vars list to use the new factor variables
+vars_for_table3_agreed <- c("leeftijd", "gender_display", "emergency_surg", "surg_specialty",
+                            "history#Coronary Artery Disease", "history#Myocardial Infarction",
+                            "history#Pheripheral Artery Disease", "history#Stroke / TIA",
+                            "history#Chronic Heart Failure", "history#Atrial Fibrilation",
+                            "history#Moderate/Severe Valvular Disease", "history#Diabetus Mellitus, non-insulin",
+                            "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
+                            "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease",
+                            "RCRI_score", "Mortality_30d", "Mortality_365d")
+
+cat_vars3_agreed <- c("gender_display", "emergency_surg", "surg_specialty",
+                      "history#Coronary Artery Disease", "history#Myocardial Infarction",
+                      "history#Pheripheral Artery Disease", "history#Stroke / TIA",
+                      "history#Chronic Heart Failure", "history#Atrial Fibrilation",
+                      "history#Moderate/Severe Valvular Disease", "history#Diabetus Mellitus, non-insulin",
+                      "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
+                      "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease",
+                      "Mortality_30d", "Mortality_365d")
+
+table3_agreed <- CreateTableOne(vars = vars_for_table3_agreed,
                                  strata = "PMI_type",
                                  data = agreed_survival_grouped,
-                                 factorVars = cat_vars,
+                                 factorVars = cat_vars3_agreed,
                                  test = TRUE)
 print(table3_agreed, nonnormal = nonnormal_vars, showAllLevels = TRUE, formatOptions = list(big.mark = ","))
+
+cat("\nIMPORTANT: Mortality is shown as 'Mortality_30d = Died' and 'Mortality_365d = Died'\n")
 
 # **NEW: Add surgical specialty p-values for Agreed**
 cat("\n\n--- SURGICAL SPECIALTY P-VALUES FOR AGREED CASES ---\n")
