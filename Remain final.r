@@ -886,53 +886,112 @@ print(hr_table)
 cat("\n\n=== KAPLAN-MEIER CURVES: CARDIAC vs NONCARDIAC ===\n")
 cat("(Log-rank Mantel-Cox test for curve comparison)\n\n")
 
-# ========== MORTALITY VERIFICATION: Check table vs KM curve consistency ==========
+# ========== MORTALITY VERIFICATION: Detailed Diagnostic ==========
 
-cat("\n--- MORTALITY VERIFICATION: Table vs KM Curve Comparison ---\n\n")
+cat("\n\n=== DETAILED MORTALITY VERIFICATION ===\n\n")
 
-# OBS12 mortality check
-cat("OBS12 - Mortality consistency check:\n")
+# Check ALL PATIENTS dataset
+cat("--- ALL PATIENTS (for Table 1) ---\n")
+cat("Total patients:", nrow(all_patients), "\n")
+cat("NA in death_30d:", sum(is.na(all_patients$death_30d)), "\n")
+cat("NA in death_365d:", sum(is.na(all_patients$death_365d)), "\n")
+cat("30-day deaths:", sum(all_patients$death_30d, na.rm = TRUE), "\n")
+cat("365-day deaths:", sum(all_patients$death_365d, na.rm = TRUE), "\n")
+
+all_patients_mortality_check <- all_patients %>%
+  summarise(
+    N = n(),
+    death_30d_0 = sum(death_30d == 0, na.rm = TRUE),
+    death_30d_1 = sum(death_30d == 1, na.rm = TRUE),
+    death_30d_NA = sum(is.na(death_30d)),
+    death_365d_0 = sum(death_365d == 0, na.rm = TRUE),
+    death_365d_1 = sum(death_365d == 1, na.rm = TRUE),
+    death_365d_NA = sum(is.na(death_365d))
+  )
+cat("\nDetailed breakdown:\n")
+print(all_patients_mortality_check)
+
+# Check OBS12 dataset
+cat("\n\n--- OBS12 DATASET (for Table 2 and KM curves) ---\n")
 cat("Total patients in obs12_with_pmi:", nrow(obs12_with_pmi), "\n")
-cat("30-day deaths (from death_30d variable):", sum(obs12_with_pmi$death_30d, na.rm = TRUE), "\n")
-cat("365-day deaths (from death_365d variable):", sum(obs12_with_pmi$death_365d, na.rm = TRUE), "\n")
+cat("NA in death_30d:", sum(is.na(obs12_with_pmi$death_30d)), "\n")
+cat("NA in death_365d:", sum(is.na(obs12_with_pmi$death_365d)), "\n")
 
-obs12_mortality_by_group <- obs12_with_pmi %>%
+obs12_mortality_detailed <- obs12_with_pmi %>%
   group_by(PMI_type) %>%
   summarise(
     N = n(),
-    Deaths_30d = sum(death_30d, na.rm = TRUE),
-    Mortality_30d_pct = round(Deaths_30d / N * 100, 1),
-    Deaths_365d = sum(death_365d, na.rm = TRUE),
-    Mortality_365d_pct = round(Deaths_365d / N * 100, 1)
+    death_30d_0 = sum(death_30d == 0, na.rm = TRUE),
+    death_30d_1 = sum(death_30d == 1, na.rm = TRUE),
+    death_30d_NA = sum(is.na(death_30d)),
+    Mortality_30d_pct = round(sum(death_30d == 1, na.rm = TRUE) / n() * 100, 1),
+    death_365d_0 = sum(death_365d == 0, na.rm = TRUE),
+    death_365d_1 = sum(death_365d == 1, na.rm = TRUE),
+    death_365d_NA = sum(is.na(death_365d)),
+    Mortality_365d_pct = round(sum(death_365d == 1, na.rm = TRUE) / n() * 100, 1)
   )
 
-cat("\nOBS12 by PMI type:\n")
-print(obs12_mortality_by_group)
+cat("\nOBS12 by PMI type - DETAILED:\n")
+print(obs12_mortality_detailed)
 
-# Agreed cases mortality check
-cat("\n\nAgreed Cases - Mortality consistency check:\n")
+# Check AGREED dataset
+cat("\n\n--- AGREED CASES DATASET (for Table 3 and KM curves) ---\n")
 cat("Total patients in agreed_survival:", nrow(agreed_survival), "\n")
-cat("30-day deaths (from death_30d variable):", sum(agreed_survival$death_30d, na.rm = TRUE), "\n")
-cat("365-day deaths (from death_365d variable):", sum(agreed_survival$death_365d, na.rm = TRUE), "\n")
+cat("NA in death_30d:", sum(is.na(agreed_survival$death_30d)), "\n")
+cat("NA in death_365d:", sum(is.na(agreed_survival$death_365d)), "\n")
 
-agreed_mortality_by_group <- agreed_survival %>%
+agreed_mortality_detailed <- agreed_survival %>%
   group_by(PMI_type) %>%
   summarise(
     N = n(),
-    Deaths_30d = sum(death_30d, na.rm = TRUE),
-    Mortality_30d_pct = round(Deaths_30d / N * 100, 1),
-    Deaths_365d = sum(death_365d, na.rm = TRUE),
-    Mortality_365d_pct = round(Deaths_365d / N * 100, 1)
+    death_30d_0 = sum(death_30d == 0, na.rm = TRUE),
+    death_30d_1 = sum(death_30d == 1, na.rm = TRUE),
+    death_30d_NA = sum(is.na(death_30d)),
+    Mortality_30d_pct = round(sum(death_30d == 1, na.rm = TRUE) / n() * 100, 1),
+    death_365d_0 = sum(death_365d == 0, na.rm = TRUE),
+    death_365d_1 = sum(death_365d == 1, na.rm = TRUE),
+    death_365d_NA = sum(is.na(death_365d)),
+    Mortality_365d_pct = round(sum(death_365d == 1, na.rm = TRUE) / n() * 100, 1)
   )
 
-cat("\nAgreed cases by PMI type:\n")
-print(agreed_mortality_by_group)
+cat("\nAgreed cases by PMI type - DETAILED:\n")
+print(agreed_mortality_detailed)
 
-cat("\n\nNote: These numbers should match what appears in the baseline tables and KM curves.\n")
-cat("If there's a discrepancy, it may be due to:\n")
-cat("  1. Different datasets being used (check distinct() filtering)\n")
-cat("  2. Missing data in survival time or event variables\n")
-cat("  3. Date calculation issues\n\n")
+# Check what CreateTableOne shows
+cat("\n\n--- WHAT CREATETABLEONE WILL DISPLAY ---\n")
+cat("CreateTableOne treats binary variables (0/1) as categorical.\n")
+cat("It displays the count and % for the '1' category by default.\n")
+cat("For death_30d and death_365d, this means it shows:\n")
+cat("  - death_30d = 1 (died within 30 days)\n")
+cat("  - death_365d = 1 (died within 365 days)\n\n")
+
+# Replicate what the table will show
+cat("OBS12 - What Table 2 should display:\n")
+obs12_table_preview <- obs12_with_pmi %>%
+  group_by(PMI_type) %>%
+  summarise(
+    N = n(),
+    `death_30d = 1 (n)` = sum(death_30d == 1, na.rm = TRUE),
+    `death_30d = 1 (%)` = round(sum(death_30d == 1, na.rm = TRUE) / n() * 100, 1),
+    `death_365d = 1 (n)` = sum(death_365d == 1, na.rm = TRUE),
+    `death_365d = 1 (%)` = round(sum(death_365d == 1, na.rm = TRUE) / n() * 100, 1)
+  )
+print(obs12_table_preview)
+
+cat("\n\nAgreed - What Table 3 should display:\n")
+agreed_table_preview <- agreed_survival %>%
+  group_by(PMI_type) %>%
+  summarise(
+    N = n(),
+    `death_30d = 1 (n)` = sum(death_30d == 1, na.rm = TRUE),
+    `death_30d = 1 (%)` = round(sum(death_30d == 1, na.rm = TRUE) / n() * 100, 1),
+    `death_365d = 1 (n)` = sum(death_365d == 1, na.rm = TRUE),
+    `death_365d = 1 (%)` = round(sum(death_365d == 1, na.rm = TRUE) / n() * 100, 1)
+  )
+print(agreed_table_preview)
+
+cat("\n\n*** Compare these numbers with what appears in the baseline tables ***\n")
+cat("*** and with the event counts in the KM curve risk tables ***\n\n")
 
 # OBS12 - 365-day survival (includes 30-day mark on x-axis)
 cat("\n--- 365-Day Survival (with 30-day mark): Cardiac vs Noncardiac (OBS12) ---\n")
