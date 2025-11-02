@@ -703,97 +703,40 @@ if(length(nonnormal_vars) > 0) {
 
 cat("\n\n=== BASELINE CHARACTERISTICS TABLES ===\n\n")
 
-vars_for_table <- c("leeftijd", "gender_display", "emergency_surg", "surg_specialty",
-                    "history#Coronary Artery Disease", "history#Myocardial Infarction",
-                    "history#Pheripheral Artery Disease", "history#Stroke / TIA",
-                    "history#Chronic Heart Failure", "history#Atrial Fibrilation",
-                    "history#Moderate/Severe Valvular Disease", "history#Diabetus Mellitus, non-insulin",
-                    "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
-                    "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease",
-                    "RCRI_score", "death_30d", "death_365d")
+# Define variables for baseline tables (NO mortality - that's for KM curves)
+vars_baseline <- c("leeftijd", "gender_display", "emergency_surg", "surg_specialty",
+                   "history#Coronary Artery Disease", "history#Myocardial Infarction",
+                   "history#Pheripheral Artery Disease", "history#Stroke / TIA",
+                   "history#Chronic Heart Failure", "history#Atrial Fibrilation",
+                   "history#Moderate/Severe Valvular Disease", "history#Diabetus Mellitus, non-insulin",
+                   "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
+                   "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease",
+                   "RCRI_score")
 
-cat_vars <- c("gender_display", "emergency_surg", "surg_specialty",
-              "history#Coronary Artery Disease", "history#Myocardial Infarction",
-              "history#Pheripheral Artery Disease", "history#Stroke / TIA",
-              "history#Chronic Heart Failure", "history#Atrial Fibrilation",
-              "history#Moderate/Severe Valvular Disease", "history#Diabetus Mellitus, non-insulin",
-              "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
-              "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease",
-              "death_30d", "death_365d")
+cat_vars_baseline <- c("gender_display", "emergency_surg", "surg_specialty",
+                       "history#Coronary Artery Disease", "history#Myocardial Infarction",
+                       "history#Pheripheral Artery Disease", "history#Stroke / TIA",
+                       "history#Chronic Heart Failure", "history#Atrial Fibrilation",
+                       "history#Moderate/Severe Valvular Disease", "history#Diabetus Mellitus, non-insulin",
+                       "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
+                       "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease")
 
 # Table 1: All included patients
-cat("\n=== TABLE 1: ALL INCLUDED PATIENTS ===\n")
-
-# Create clear mortality labels
-all_patients_with_labels <- all_patients %>%
-  mutate(
-    Mortality_30d = factor(death_30d, levels = c(0, 1), labels = c("Alive", "Died")),
-    Mortality_365d = factor(death_365d, levels = c(0, 1), labels = c("Alive", "Died"))
-  )
-
-vars_for_table1 <- c("leeftijd", "gender_display", "emergency_surg", "surg_specialty",
-                     "history#Coronary Artery Disease", "history#Myocardial Infarction",
-                     "history#Pheripheral Artery Disease", "history#Stroke / TIA",
-                     "history#Chronic Heart Failure", "history#Atrial Fibrilation",
-                     "history#Moderate/Severe Valvular Disease", "history#Diabetus Mellitus, non-insulin",
-                     "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
-                     "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease",
-                     "RCRI_score", "Mortality_30d", "Mortality_365d")
-
-cat_vars1 <- c("gender_display", "emergency_surg", "surg_specialty",
-               "history#Coronary Artery Disease", "history#Myocardial Infarction",
-               "history#Pheripheral Artery Disease", "history#Stroke / TIA",
-               "history#Chronic Heart Failure", "history#Atrial Fibrilation",
-               "history#Moderate/Severe Valvular Disease", "history#Diabetus Mellitus, non-insulin",
-               "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
-               "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease",
-               "Mortality_30d", "Mortality_365d")
-
-table1_all <- CreateTableOne(vars = vars_for_table1,
-                              data = all_patients_with_labels,
-                              factorVars = cat_vars1,
+cat("\n=== TABLE 1: ALL INCLUDED PATIENTS (BASELINE CHARACTERISTICS) ===\n")
+table1_all <- CreateTableOne(vars = vars_baseline,
+                              data = all_patients,
+                              factorVars = cat_vars_baseline,
                               test = FALSE)
 print(table1_all, nonnormal = nonnormal_vars, showAllLevels = TRUE, formatOptions = list(big.mark = ","))
 
-cat("\nIMPORTANT: Mortality is shown as 'Mortality_30d = Died' and 'Mortality_365d = Died'\n")
-
-# Table 2: OBS12 - Cardiac vs Noncardiac
-cat("\n\n=== TABLE 2: OBS12 - CARDIAC vs NONCARDIAC PMI ===\n")
-obs12_with_pmi_grouped <- obs12_with_pmi %>%
-  mutate(
-    PMI_type = factor(PMI_type, levels = c("Cardiac", "Noncardiac")),
-    # Create factor variables for mortality with clear labels
-    Mortality_30d = factor(death_30d, levels = c(0, 1), labels = c("Alive", "Died")),
-    Mortality_365d = factor(death_365d, levels = c(0, 1), labels = c("Alive", "Died"))
-  )
-
-# Update vars list to use the new factor variables
-vars_for_table2_obs12 <- c("leeftijd", "gender_display", "emergency_surg", "surg_specialty",
-                           "history#Coronary Artery Disease", "history#Myocardial Infarction",
-                           "history#Pheripheral Artery Disease", "history#Stroke / TIA",
-                           "history#Chronic Heart Failure", "history#Atrial Fibrilation",
-                           "history#Moderate/Severe Valvular Disease", "history#Diabetus Mellitus, non-insulin",
-                           "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
-                           "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease",
-                           "RCRI_score", "Mortality_30d", "Mortality_365d")
-
-cat_vars2_obs12 <- c("gender_display", "emergency_surg", "surg_specialty",
-                     "history#Coronary Artery Disease", "history#Myocardial Infarction",
-                     "history#Pheripheral Artery Disease", "history#Stroke / TIA",
-                     "history#Chronic Heart Failure", "history#Atrial Fibrilation",
-                     "history#Moderate/Severe Valvular Disease", "history#Diabetus Mellitus, non-insulin",
-                     "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
-                     "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease",
-                     "Mortality_30d", "Mortality_365d")
-
-table2_obs12 <- CreateTableOne(vars = vars_for_table2_obs12,
+# Table 2: OBS12 - Cardiac vs Noncardiac (baseline characteristics)
+cat("\n\n=== TABLE 2: OBS12 - CARDIAC vs NONCARDIAC PMI (BASELINE CHARACTERISTICS) ===\n")
+table2_obs12 <- CreateTableOne(vars = vars_baseline,
                                 strata = "PMI_type",
-                                data = obs12_with_pmi_grouped,
-                                factorVars = cat_vars2_obs12,
+                                data = obs12_with_pmi %>% mutate(PMI_type = factor(PMI_type, levels = c("Cardiac", "Noncardiac"))),
+                                factorVars = cat_vars_baseline,
                                 test = TRUE)
 print(table2_obs12, nonnormal = nonnormal_vars, showAllLevels = TRUE, formatOptions = list(big.mark = ","))
-
-cat("\nIMPORTANT: Mortality is shown as 'Mortality_30d = Died' and 'Mortality_365d = Died'\n")
 
 # **NEW: Add surgical specialty p-values for OBS12**
 cat("\n\n--- SURGICAL SPECIALTY P-VALUES FOR OBS12 ---\n")
@@ -810,43 +753,14 @@ obs12_specialty_pval_table <- obs12_specialty_results %>%
 print(obs12_specialty_pval_table, row.names = FALSE)
 cat("\nNote: Fisher's exact test is used when N < 20; Chi-square test otherwise.\n")
 
-# Table 3: Agreed cases - Cardiac vs Noncardiac
-cat("\n\n=== TABLE 3: AGREED CASES - CARDIAC vs NONCARDIAC PMI ===\n")
-agreed_survival_grouped <- agreed_survival %>%
-  mutate(
-    PMI_type = factor(PMI_type, levels = c("Cardiac", "Noncardiac")),
-    # Create factor variables for mortality with clear labels
-    Mortality_30d = factor(death_30d, levels = c(0, 1), labels = c("Alive", "Died")),
-    Mortality_365d = factor(death_365d, levels = c(0, 1), labels = c("Alive", "Died"))
-  )
-
-# Update vars list to use the new factor variables
-vars_for_table3_agreed <- c("leeftijd", "gender_display", "emergency_surg", "surg_specialty",
-                            "history#Coronary Artery Disease", "history#Myocardial Infarction",
-                            "history#Pheripheral Artery Disease", "history#Stroke / TIA",
-                            "history#Chronic Heart Failure", "history#Atrial Fibrilation",
-                            "history#Moderate/Severe Valvular Disease", "history#Diabetus Mellitus, non-insulin",
-                            "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
-                            "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease",
-                            "RCRI_score", "Mortality_30d", "Mortality_365d")
-
-cat_vars3_agreed <- c("gender_display", "emergency_surg", "surg_specialty",
-                      "history#Coronary Artery Disease", "history#Myocardial Infarction",
-                      "history#Pheripheral Artery Disease", "history#Stroke / TIA",
-                      "history#Chronic Heart Failure", "history#Atrial Fibrilation",
-                      "history#Moderate/Severe Valvular Disease", "history#Diabetus Mellitus, non-insulin",
-                      "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
-                      "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease",
-                      "Mortality_30d", "Mortality_365d")
-
-table3_agreed <- CreateTableOne(vars = vars_for_table3_agreed,
+# Table 3: Agreed cases - Cardiac vs Noncardiac (baseline characteristics)
+cat("\n\n=== TABLE 3: AGREED CASES - CARDIAC vs NONCARDIAC PMI (BASELINE CHARACTERISTICS) ===\n")
+table3_agreed <- CreateTableOne(vars = vars_baseline,
                                  strata = "PMI_type",
-                                 data = agreed_survival_grouped,
-                                 factorVars = cat_vars3_agreed,
+                                 data = agreed_survival %>% mutate(PMI_type = factor(PMI_type, levels = c("Cardiac", "Noncardiac"))),
+                                 factorVars = cat_vars_baseline,
                                  test = TRUE)
 print(table3_agreed, nonnormal = nonnormal_vars, showAllLevels = TRUE, formatOptions = list(big.mark = ","))
-
-cat("\nIMPORTANT: Mortality is shown as 'Mortality_30d = Died' and 'Mortality_365d = Died'\n")
 
 # **NEW: Add surgical specialty p-values for Agreed**
 cat("\n\n--- SURGICAL SPECIALTY P-VALUES FOR AGREED CASES ---\n")
@@ -863,215 +777,40 @@ agreed_specialty_pval_table <- agreed_specialty_results %>%
 print(agreed_specialty_pval_table, row.names = FALSE)
 cat("\nNote: Fisher's exact test is used when N < 20; Chi-square test otherwise.\n")
 
-# ========== COX REGRESSION MODELS ==========
-
-cat("\n\n=== COX REGRESSION MODELS - OBS12 ===\n")
-
-obs12_cox <- obs12_with_pmi %>%
-  mutate(
-    RCRI_high = if_else(RCRI_score > 1, 1, 0),
-    emergency_surg_factor = factor(emergency_surg, levels = c(0, 1), labels = c("Elective", "Emergency")),
-    RCRI_high_factor = factor(RCRI_high, levels = c(0, 1), labels = c("RCRI≤1", "RCRI>1")),
-    sex_factor = factor(gender_display, levels = c("Male", "Female")),
-    age_continuous = leeftijd
-  )
-
-cox_30d_obs12_unadj <- coxph(Surv(survival_time_30d, death_30d) ~ PMI_type, data = obs12_cox)
-cox_30d_obs12_full <- coxph(Surv(survival_time_30d, death_30d) ~ PMI_type + age_continuous + sex_factor + emergency_surg_factor + RCRI_high_factor, data = obs12_cox)
-cox_365d_obs12_unadj <- coxph(Surv(survival_time_365d, death_365d) ~ PMI_type, data = obs12_cox)
-cox_365d_obs12_full <- coxph(Surv(survival_time_365d, death_365d) ~ PMI_type + age_continuous + sex_factor + emergency_surg_factor + RCRI_high_factor, data = obs12_cox)
-
-# Extract adjusted HRs for display on plots
-hr_30d_obs12_adj <- exp(coef(cox_30d_obs12_full)["PMI_typeNoncardiac"])
-ci_30d_obs12_adj <- exp(confint(cox_30d_obs12_full)["PMI_typeNoncardiac",])
-p_30d_obs12_adj <- summary(cox_30d_obs12_full)$coefficients["PMI_typeNoncardiac", "Pr(>|z|)"]
-
-hr_365d_obs12_adj <- exp(coef(cox_365d_obs12_full)["PMI_typeNoncardiac"])
-ci_365d_obs12_adj <- exp(confint(cox_365d_obs12_full)["PMI_typeNoncardiac",])
-p_365d_obs12_adj <- summary(cox_365d_obs12_full)$coefficients["PMI_typeNoncardiac", "Pr(>|z|)"]
-
-cat("\n=== COX REGRESSION MODELS - AGREED CASES ===\n")
-
-agreed_survival_cox <- agreed_survival %>%
-  mutate(
-    RCRI_high = if_else(RCRI_score > 1, 1, 0),
-    emergency_surg_factor = factor(emergency_surg, levels = c(0, 1), labels = c("Elective", "Emergency")),
-    RCRI_high_factor = factor(RCRI_high, levels = c(0, 1), labels = c("RCRI≤1", "RCRI>1")),
-    sex_factor = factor(gender_display, levels = c("Male", "Female")),
-    age_continuous = leeftijd
-  )
-
-cox_30d_agreed_unadj <- coxph(Surv(survival_time_30d, death_30d) ~ PMI_type, data = agreed_survival_cox)
-cox_30d_agreed_full <- coxph(Surv(survival_time_30d, death_30d) ~ PMI_type + age_continuous + sex_factor + emergency_surg_factor + RCRI_high_factor, data = agreed_survival_cox)
-cox_365d_agreed_unadj <- coxph(Surv(survival_time_365d, death_365d) ~ PMI_type, data = agreed_survival_cox)
-cox_365d_agreed_full <- coxph(Surv(survival_time_365d, death_365d) ~ PMI_type + age_continuous + sex_factor + emergency_surg_factor + RCRI_high_factor, data = agreed_survival_cox)
-
-# Extract adjusted HRs for display on plots
-hr_30d_agreed_adj <- exp(coef(cox_30d_agreed_full)["PMI_typeNoncardiac"])
-ci_30d_agreed_adj <- exp(confint(cox_30d_agreed_full)["PMI_typeNoncardiac",])
-p_30d_agreed_adj <- summary(cox_30d_agreed_full)$coefficients["PMI_typeNoncardiac", "Pr(>|z|)"]
-
-hr_365d_agreed_adj <- exp(coef(cox_365d_agreed_full)["PMI_typeNoncardiac"])
-ci_365d_agreed_adj <- exp(confint(cox_365d_agreed_full)["PMI_typeNoncardiac",])
-p_365d_agreed_adj <- summary(cox_365d_agreed_full)$coefficients["PMI_typeNoncardiac", "Pr(>|z|)"]
-
-# Extract UNADJUSTED HRs for display on plots
-hr_30d_obs12_unadj_plot <- exp(coef(cox_30d_obs12_unadj)["PMI_typeNoncardiac"])
-ci_30d_obs12_unadj_plot <- exp(confint(cox_30d_obs12_unadj)["PMI_typeNoncardiac",])
-
-hr_365d_obs12_unadj_plot <- exp(coef(cox_365d_obs12_unadj)["PMI_typeNoncardiac"])
-ci_365d_obs12_unadj_plot <- exp(confint(cox_365d_obs12_unadj)["PMI_typeNoncardiac",])
-
-hr_30d_agreed_unadj_plot <- exp(coef(cox_30d_agreed_unadj)["PMI_typeNoncardiac"])
-ci_30d_agreed_unadj_plot <- exp(confint(cox_30d_agreed_unadj)["PMI_typeNoncardiac",])
-
-hr_365d_agreed_unadj_plot <- exp(coef(cox_365d_agreed_unadj)["PMI_typeNoncardiac"])
-ci_365d_agreed_unadj_plot <- exp(confint(cox_365d_agreed_unadj)["PMI_typeNoncardiac",])
-
-# Extract HRs
-extract_hr <- function(model, model_name, outcome, dataset) {
-  coef_name <- "PMI_typeNoncardiac"
-  if(!coef_name %in% names(coef(model))) return(NULL)
-  
-  hr <- exp(coef(model)[coef_name])
-  ci <- exp(confint(model)[coef_name,])
-  p <- summary(model)$coefficients[coef_name, "Pr(>|z|)"]
-  
-  data.frame(
-    Dataset = dataset,
-    Outcome = outcome,
-    Model = model_name,
-    HR = round(hr, 2),
-    CI = paste0(round(hr, 2), " (", round(ci[1], 2), "-", round(ci[2], 2), ")"),
-    p_value = format.pval(p, digits = 3, eps = 0.001)
-  )
-}
-
-hr_table <- bind_rows(
-  extract_hr(cox_30d_obs12_unadj, "Unadjusted", "30-day", "OBS12"),
-  extract_hr(cox_30d_obs12_full, "Fully adjusted", "30-day", "OBS12"),
-  extract_hr(cox_365d_obs12_unadj, "Unadjusted", "365-day", "OBS12"),
-  extract_hr(cox_365d_obs12_full, "Fully adjusted", "365-day", "OBS12"),
-  extract_hr(cox_30d_agreed_unadj, "Unadjusted", "30-day", "Agreed"),
-  extract_hr(cox_30d_agreed_full, "Fully adjusted", "30-day", "Agreed"),
-  extract_hr(cox_365d_agreed_unadj, "Unadjusted", "365-day", "Agreed"),
-  extract_hr(cox_365d_agreed_full, "Fully adjusted", "365-day", "Agreed")
-)
-
-cat("\n=== HAZARD RATIOS: Noncardiac vs Cardiac ===\n")
-print(hr_table)
-
 # ========== KAPLAN-MEIER CURVES: CARDIAC vs NONCARDIAC WITH LOG-RANK TEST ==========
 
 cat("\n\n=== KAPLAN-MEIER CURVES: CARDIAC vs NONCARDIAC ===\n")
 cat("(Log-rank Mantel-Cox test for curve comparison)\n\n")
 
-# ========== MORTALITY VERIFICATION: Detailed Diagnostic ==========
+# ========== MORTALITY SUMMARY (for KM curve verification) ==========
 
-cat("\n\n=== DETAILED MORTALITY VERIFICATION ===\n\n")
+cat("\n--- MORTALITY SUMMARY FOR KM CURVE VERIFICATION ---\n\n")
 
-# Check ALL PATIENTS dataset
-cat("--- ALL PATIENTS (for Table 1) ---\n")
-cat("Total patients:", nrow(all_patients), "\n")
-cat("NA in death_30d:", sum(is.na(all_patients$death_30d)), "\n")
-cat("NA in death_365d:", sum(is.na(all_patients$death_365d)), "\n")
-cat("30-day deaths:", sum(all_patients$death_30d, na.rm = TRUE), "\n")
-cat("365-day deaths:", sum(all_patients$death_365d, na.rm = TRUE), "\n")
-
-all_patients_mortality_check <- all_patients %>%
-  summarise(
-    N = n(),
-    death_30d_0 = sum(death_30d == 0, na.rm = TRUE),
-    death_30d_1 = sum(death_30d == 1, na.rm = TRUE),
-    death_30d_NA = sum(is.na(death_30d)),
-    death_365d_0 = sum(death_365d == 0, na.rm = TRUE),
-    death_365d_1 = sum(death_365d == 1, na.rm = TRUE),
-    death_365d_NA = sum(is.na(death_365d))
-  )
-cat("\nDetailed breakdown:\n")
-print(all_patients_mortality_check)
-
-# Check OBS12 dataset
-cat("\n\n--- OBS12 DATASET (for Table 2 and KM curves) ---\n")
-cat("Total patients in obs12_with_pmi:", nrow(obs12_with_pmi), "\n")
-cat("NA in death_30d:", sum(is.na(obs12_with_pmi$death_30d)), "\n")
-cat("NA in death_365d:", sum(is.na(obs12_with_pmi$death_365d)), "\n")
-
-obs12_mortality_detailed <- obs12_with_pmi %>%
+cat("OBS12 mortality by PMI type:\n")
+obs12_mortality_summary <- obs12_with_pmi %>%
   group_by(PMI_type) %>%
   summarise(
     N = n(),
-    death_30d_0 = sum(death_30d == 0, na.rm = TRUE),
-    death_30d_1 = sum(death_30d == 1, na.rm = TRUE),
-    death_30d_NA = sum(is.na(death_30d)),
-    Mortality_30d_pct = round(sum(death_30d == 1, na.rm = TRUE) / n() * 100, 1),
-    death_365d_0 = sum(death_365d == 0, na.rm = TRUE),
-    death_365d_1 = sum(death_365d == 1, na.rm = TRUE),
-    death_365d_NA = sum(is.na(death_365d)),
-    Mortality_365d_pct = round(sum(death_365d == 1, na.rm = TRUE) / n() * 100, 1)
+    Deaths_30d = sum(death_30d == 1, na.rm = TRUE),
+    Mortality_30d = round(Deaths_30d / N * 100, 1),
+    Deaths_365d = sum(death_365d == 1, na.rm = TRUE),
+    Mortality_365d = round(Deaths_365d / N * 100, 1)
   )
+print(obs12_mortality_summary)
 
-cat("\nOBS12 by PMI type - DETAILED:\n")
-print(obs12_mortality_detailed)
-
-# Check AGREED dataset
-cat("\n\n--- AGREED CASES DATASET (for Table 3 and KM curves) ---\n")
-cat("Total patients in agreed_survival:", nrow(agreed_survival), "\n")
-cat("NA in death_30d:", sum(is.na(agreed_survival$death_30d)), "\n")
-cat("NA in death_365d:", sum(is.na(agreed_survival$death_365d)), "\n")
-
-agreed_mortality_detailed <- agreed_survival %>%
+cat("\nAgreed cases mortality by PMI type:\n")
+agreed_mortality_summary <- agreed_survival %>%
   group_by(PMI_type) %>%
   summarise(
     N = n(),
-    death_30d_0 = sum(death_30d == 0, na.rm = TRUE),
-    death_30d_1 = sum(death_30d == 1, na.rm = TRUE),
-    death_30d_NA = sum(is.na(death_30d)),
-    Mortality_30d_pct = round(sum(death_30d == 1, na.rm = TRUE) / n() * 100, 1),
-    death_365d_0 = sum(death_365d == 0, na.rm = TRUE),
-    death_365d_1 = sum(death_365d == 1, na.rm = TRUE),
-    death_365d_NA = sum(is.na(death_365d)),
-    Mortality_365d_pct = round(sum(death_365d == 1, na.rm = TRUE) / n() * 100, 1)
+    Deaths_30d = sum(death_30d == 1, na.rm = TRUE),
+    Mortality_30d = round(Deaths_30d / N * 100, 1),
+    Deaths_365d = sum(death_365d == 1, na.rm = TRUE),
+    Mortality_365d = round(Deaths_365d / N * 100, 1)
   )
+print(agreed_mortality_summary)
 
-cat("\nAgreed cases by PMI type - DETAILED:\n")
-print(agreed_mortality_detailed)
-
-# Check what CreateTableOne shows
-cat("\n\n--- WHAT CREATETABLEONE WILL DISPLAY ---\n")
-cat("CreateTableOne treats binary variables (0/1) as categorical.\n")
-cat("It displays the count and % for the '1' category by default.\n")
-cat("For death_30d and death_365d, this means it shows:\n")
-cat("  - death_30d = 1 (died within 30 days)\n")
-cat("  - death_365d = 1 (died within 365 days)\n\n")
-
-# Replicate what the table will show
-cat("OBS12 - What Table 2 should display:\n")
-obs12_table_preview <- obs12_with_pmi %>%
-  group_by(PMI_type) %>%
-  summarise(
-    N = n(),
-    `death_30d = 1 (n)` = sum(death_30d == 1, na.rm = TRUE),
-    `death_30d = 1 (%)` = round(sum(death_30d == 1, na.rm = TRUE) / n() * 100, 1),
-    `death_365d = 1 (n)` = sum(death_365d == 1, na.rm = TRUE),
-    `death_365d = 1 (%)` = round(sum(death_365d == 1, na.rm = TRUE) / n() * 100, 1)
-  )
-print(obs12_table_preview)
-
-cat("\n\nAgreed - What Table 3 should display:\n")
-agreed_table_preview <- agreed_survival %>%
-  group_by(PMI_type) %>%
-  summarise(
-    N = n(),
-    `death_30d = 1 (n)` = sum(death_30d == 1, na.rm = TRUE),
-    `death_30d = 1 (%)` = round(sum(death_30d == 1, na.rm = TRUE) / n() * 100, 1),
-    `death_365d = 1 (n)` = sum(death_365d == 1, na.rm = TRUE),
-    `death_365d = 1 (%)` = round(sum(death_365d == 1, na.rm = TRUE) / n() * 100, 1)
-  )
-print(agreed_table_preview)
-
-cat("\n\n*** Compare these numbers with what appears in the baseline tables ***\n")
-cat("*** and with the event counts in the KM curve risk tables ***\n\n")
+cat("\nNote: These values should match the KM curve risk tables.\n\n")
 
 # OBS12 - 365-day survival (includes 30-day mark on x-axis)
 cat("\n--- 365-Day Survival (with 30-day mark): Cardiac vs Noncardiac (OBS12) ---\n")
@@ -1127,19 +866,18 @@ ggsurvplot(
   palette = c("#E7B800", "#2E9FDF")
 )
 
-cat("\n=== ANALYSIS COMPLETE ===\n")
-cat("\n✓ Comparison table: OBS12 vs Agreed PMI categories\n")
-cat("✓ PMI category overviews (noncardiac, cardiac, T2MI)\n")
-cat("✓ Mortality verification: Table vs KM curve consistency check\n")
-cat("✓ Cardiac vs Noncardiac 365-day KM curves with:\n")
-cat("  - Log-rank (Mantel-Cox) χ² and p-value ONLY\n")
-cat("  - 30-day mark visible on x-axis (break.time.by = 30)\n")
-cat("  - Separate 30-day curves removed (redundant)\n")
-cat("✓ PMI category KM curves (30d) with 95% CI\n")
-cat("✓ Surgical specialty analysis with p-values for cardiac vs noncardiac\n")
-cat("✓ T2MI with vs without cause KM curves (30d & 365d)\n")
-cat("✓ Baseline characteristics tables\n")
-cat("✓ Surgical specialty p-values integrated into OBS12 and Agreed tables\n")
-cat("✓ Cox regression table with both unadjusted and adjusted HR (separate from KM curves)\n")
-cat("✓ UNIFORM Date from data_included used for all survival calculations\n")
-cat("\nNote: KM curves show ONLY log-rank test (no Cox HR on plots).\n")
+cat("\n\n=== ANALYSIS COMPLETE ===\n")
+cat("\n✓ Inter-rater agreement (Cohen's Kappa)\n")
+cat("✓ PMI category breakdown (OBS12 vs Agreed)\n")
+cat("✓ Surgical specialty analysis (Chi-square/Fisher p-values)\n")
+cat("✓ Baseline characteristics tables (NO mortality - baseline only)\n")
+cat("✓ Mortality summary for KM curve verification\n")
+cat("✓ Kaplan-Meier curves (365-day) with Log-rank test:\n")
+cat("  - Cardiac vs Noncardiac (OBS12 & Agreed)\n")
+cat("  - PMI categories (30-day)\n")
+cat("  - T2MI with vs without cause (30-day & 365-day)\n")
+cat("\nKey points:\n")
+cat("  • Baseline tables: Chi-square test for group comparisons\n")
+cat("  • KM curves: Log-rank (Mantel-Cox) test for survival comparison\n")
+cat("  • NO Cox regression or hazard ratios included\n")
+cat("  • Uniform Date from coupling file for all survival calculations\n")
