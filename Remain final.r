@@ -209,6 +209,143 @@ agreed_survival <- obs12 %>%
   filter(!is.na(PMI_type)) %>%
   distinct(Pseudonym, .keep_all = TRUE)
 
+# ========== MEDICATION ANALYSIS ==========
+
+cat("\n\n=== MEDICATION ANALYSIS ===\n\n")
+
+# Read medication data
+medication <- read.csv("Z:/REMAIN/Data export Datacapture/REMAIN - 2024-06-20 - medicatie_voorschrift.csv")
+
+# Target medications for analysis
+target_medications <- c("CLOPIDOGREL", "ACETYLSALICYLZUUR", "DABIGATRANETEXILAAT", "TICAGRELOR")
+
+# Filter for target medications and join with OBS12 data
+medication_filtered <- medication %>%
+  filter(code5_ATC_display_nl %in% target_medications) %>%
+  distinct(pseudonym_value, code5_ATC_display_nl)
+
+# Join medication data with obs12_with_pmi
+obs12_with_medication <- obs12_with_pmi %>%
+  left_join(medication_filtered, by = c("Pseudonym" = "pseudonym_value"))
+
+# Count patients on each medication by PMI type
+cat("--- Medication Usage by PMI Type (OBS12) ---\n\n")
+
+medication_summary <- obs12_with_medication %>%
+  filter(!is.na(code5_ATC_display_nl)) %>%
+  group_by(PMI_type, code5_ATC_display_nl) %>%
+  summarise(N = n(), .groups = 'drop') %>%
+  pivot_wider(names_from = PMI_type, values_from = N, values_fill = 0) %>%
+  mutate(Total = Cardiac + Noncardiac) %>%
+  arrange(desc(Total))
+
+print(medication_summary)
+
+# Overall medication usage by PMI type
+cat("\n--- Overall Medication Usage Summary (OBS12) ---\n\n")
+
+overall_med_summary <- obs12_with_pmi %>%
+  left_join(medication_filtered %>%
+              filter(code5_ATC_display_nl %in% target_medications) %>%
+              mutate(on_medication = 1) %>%
+              distinct(pseudonym_value, on_medication),
+            by = c("Pseudonym" = "pseudonym_value")) %>%
+  mutate(on_medication = replace_na(on_medication, 0)) %>%
+  group_by(PMI_type) %>%
+  summarise(
+    Total_patients = n(),
+    On_target_medications = sum(on_medication),
+    Percentage = round(On_target_medications / Total_patients * 100, 1)
+  )
+
+print(overall_med_summary)
+
+# Count unique patients on each medication
+cat("\n--- Patients on Each Medication (OBS12) ---\n\n")
+
+for(med in target_medications) {
+  cardiac_count <- obs12_with_medication %>%
+    filter(PMI_type == "Cardiac" & code5_ATC_display_nl == med) %>%
+    nrow()
+
+  noncardiac_count <- obs12_with_medication %>%
+    filter(PMI_type == "Noncardiac" & code5_ATC_display_nl == med) %>%
+    nrow()
+
+  total_cardiac <- sum(obs12_with_pmi$PMI_type == "Cardiac")
+  total_noncardiac <- sum(obs12_with_pmi$PMI_type == "Noncardiac")
+
+  cat(med, ":\n")
+  cat("  Cardiac PMI:", cardiac_count, "/", total_cardiac,
+      "(", round(cardiac_count/total_cardiac*100, 1), "%)\n")
+  cat("  Noncardiac PMI:", noncardiac_count, "/", total_noncardiac,
+      "(", round(noncardiac_count/total_noncardiac*100, 1), "%)\n\n")
+}
+
+# ========== ECG ANALYSIS ==========
+
+cat("\n\n=== ECG ANALYSIS ===\n\n")
+
+# Note: ECG variable is expected to be in the main dataset
+# If ECG is not present, check variable names in the data
+
+# Add ECG analysis to obs12_with_pmi
+# Assuming ECG variable exists in the data with values 0 and 1
+if("ECG" %in% names(obs12_with_pmi)) {
+  cat("--- ECG Distribution by PMI Type (OBS12) ---\n\n")
+
+  ecg_summary <- obs12_with_pmi %>%
+    filter(!is.na(ECG)) %>%
+    group_by(PMI_type, ECG) %>%
+    summarise(N = n(), .groups = 'drop') %>%
+    pivot_wider(names_from = PMI_type, values_from = N, values_fill = 0) %>%
+    mutate(Total = Cardiac + Noncardiac,
+           ECG = factor(ECG, levels = c(0, 1), labels = c("No ECG (0)", "ECG Done (1)")))
+
+  print(ecg_summary)
+
+  # ECG percentages by PMI type
+  cat("\n--- ECG Percentages by PMI Type (OBS12) ---\n\n")
+
+  ecg_pct_summary <- obs12_with_pmi %>%
+    filter(!is.na(ECG)) %>%
+    group_by(PMI_type) %>%
+    summarise(
+      Total = n(),
+      ECG_Done = sum(ECG == 1, na.rm = TRUE),
+      ECG_Not_Done = sum(ECG == 0, na.rm = TRUE),
+      Pct_ECG_Done = round(ECG_Done / Total * 100, 1),
+      Pct_ECG_Not_Done = round(ECG_Not_Done / Total * 100, 1)
+    )
+
+  print(ecg_pct_summary)
+
+  # Chi-square test for ECG vs PMI type
+  cat("\n--- Statistical Test: ECG by PMI Type ---\n\n")
+
+  ecg_table <- table(obs12_with_pmi$PMI_type, obs12_with_pmi$ECG)
+  if(nrow(ecg_table) > 1 && ncol(ecg_table) > 1) {
+    chisq_result <- chisq.test(ecg_table)
+    cat("Chi-square test:\n")
+    cat("  X-squared =", round(chisq_result$statistic, 3), "\n")
+    cat("  p-value =", format.pval(chisq_result$p.value, digits = 3), "\n\n")
+    print(ecg_table)
+  }
+
+} else {
+  cat("WARNING: ECG variable not found in obs12_with_pmi dataset.\n")
+  cat("Available variables containing 'ECG':\n")
+  ecg_vars <- grep("ECG|ecg|Ecg", names(obs12_with_pmi), value = TRUE, ignore.case = TRUE)
+  if(length(ecg_vars) > 0) {
+    print(ecg_vars)
+  } else {
+    cat("  No ECG-related variables found.\n")
+    cat("\nPlease check the variable name in the dataset.\n")
+    cat("First few variable names:\n")
+    print(head(names(obs12_with_pmi), 20))
+  }
+}
+
 # ========== PMI CATEGORY BREAKDOWN - OBS12 ==========
 
 cat("\n\n=== PMI CATEGORY BREAKDOWN - OBS12 ===\n\n")
