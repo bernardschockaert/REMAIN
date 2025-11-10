@@ -217,7 +217,7 @@ cat("\n\n=== MEDICATION ANALYSIS ===\n\n")
 medication <- read.csv("Z:/REMAIN/Data export Datacapture/REMAIN - 2024-06-20 - medicatie_voorschrift.csv")
 
 # Target medications for analysis
-target_medications <- c("CLOPIDOGREL", "ACETYLSALICYLZUUR", "DABIGATRANEXILAAT", "TICAGRELOR")
+target_medications <- c("CLOPIDOGREL", "ACETYLSALICYLZUUR", "DABIGATRANETEXILAAT", "TICAGRELOR")
 
 # Filter for target medications and join with OBS12 data
 medication_filtered <- medication %>%
