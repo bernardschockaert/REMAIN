@@ -233,9 +233,22 @@ medication_summary <- obs12_with_medication %>%
   filter(!is.na(code5_ATC_display_nl)) %>%
   group_by(PMI_type, code5_ATC_display_nl) %>%
   summarise(N = n(), .groups = 'drop') %>%
-  pivot_wider(names_from = PMI_type, values_from = N, values_fill = 0) %>%
-  mutate(Total = Cardiac + Noncardiac) %>%
-  arrange(desc(Total))
+  pivot_wider(names_from = PMI_type, values_from = N, values_fill = 0)
+
+# Add Total column (handle case where Cardiac or Noncardiac column might not exist)
+if("Cardiac" %in% names(medication_summary) && "Noncardiac" %in% names(medication_summary)) {
+  medication_summary <- medication_summary %>%
+    mutate(Total = Cardiac + Noncardiac) %>%
+    arrange(desc(Total))
+} else if("Cardiac" %in% names(medication_summary)) {
+  medication_summary <- medication_summary %>%
+    mutate(Noncardiac = 0, Total = Cardiac) %>%
+    arrange(desc(Total))
+} else if("Noncardiac" %in% names(medication_summary)) {
+  medication_summary <- medication_summary %>%
+    mutate(Cardiac = 0, Total = Noncardiac) %>%
+    arrange(desc(Total))
+}
 
 print(medication_summary)
 
@@ -296,9 +309,22 @@ if("ECG" %in% names(obs12_with_pmi)) {
     filter(!is.na(ECG)) %>%
     group_by(PMI_type, ECG) %>%
     summarise(N = n(), .groups = 'drop') %>%
-    pivot_wider(names_from = PMI_type, values_from = N, values_fill = 0) %>%
-    mutate(Total = Cardiac + Noncardiac,
-           ECG = factor(ECG, levels = c(0, 1), labels = c("No ECG (0)", "ECG Done (1)")))
+    pivot_wider(names_from = PMI_type, values_from = N, values_fill = 0)
+
+  # Add Total column (handle case where Cardiac or Noncardiac column might not exist)
+  if("Cardiac" %in% names(ecg_summary) && "Noncardiac" %in% names(ecg_summary)) {
+    ecg_summary <- ecg_summary %>%
+      mutate(Total = Cardiac + Noncardiac)
+  } else if("Cardiac" %in% names(ecg_summary)) {
+    ecg_summary <- ecg_summary %>%
+      mutate(Noncardiac = 0, Total = Cardiac)
+  } else if("Noncardiac" %in% names(ecg_summary)) {
+    ecg_summary <- ecg_summary %>%
+      mutate(Cardiac = 0, Total = Noncardiac)
+  }
+
+  ecg_summary <- ecg_summary %>%
+    mutate(ECG = factor(ECG, levels = c(0, 1), labels = c("No ECG (0)", "ECG Done (1)")))
 
   print(ecg_summary)
 
