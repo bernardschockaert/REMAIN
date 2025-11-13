@@ -723,6 +723,49 @@ if(nrow(mort_table_obs12) > 1 && ncol(mort_table_obs12) > 1) {
   cat("  p-value =", format.pval(chisq_mort_obs12$p.value, digits = 3), "\n\n")
 }
 
+# Logistic regression: adjusted for age and emergency surgery
+cat("\n--- Logistic Regression Analysis (OBS12) ---\n\n")
+
+# Prepare data for logistic regression
+obs12_logistic <- obs12_with_pmi %>%
+  mutate(
+    PMI_type_numeric = if_else(PMI_type == "Noncardiac", 1, 0),  # Noncardiac vs Cardiac (reference)
+    age_continuous = leeftijd,
+    emergency_binary = emergency_surg
+  ) %>%
+  filter(!is.na(age_continuous) & !is.na(emergency_binary) & !is.na(death_in_hospital))
+
+# Unadjusted model
+model_unadjusted_obs12 <- glm(death_in_hospital ~ PMI_type_numeric,
+                               data = obs12_logistic,
+                               family = binomial(link = "logit"))
+
+# Adjusted model (age + emergency surgery)
+model_adjusted_obs12 <- glm(death_in_hospital ~ PMI_type_numeric + age_continuous + emergency_binary,
+                             data = obs12_logistic,
+                             family = binomial(link = "logit"))
+
+# Extract results
+or_unadj <- exp(coef(model_unadjusted_obs12)["PMI_type_numeric"])
+ci_unadj <- exp(confint(model_unadjusted_obs12)["PMI_type_numeric",])
+p_unadj <- summary(model_unadjusted_obs12)$coefficients["PMI_type_numeric", "Pr(>|z|)"]
+
+or_adj <- exp(coef(model_adjusted_obs12)["PMI_type_numeric"])
+ci_adj <- exp(confint(model_adjusted_obs12)["PMI_type_numeric",])
+p_adj <- summary(model_adjusted_obs12)$coefficients["PMI_type_numeric", "Pr(>|z|)"]
+
+cat("Odds Ratios for In-Hospital Mortality (Noncardiac vs Cardiac):\n\n")
+cat("Unadjusted OR:", round(or_unadj, 2),
+    "(95% CI:", round(ci_unadj[1], 2), "-", round(ci_unadj[2], 2), ")\n")
+cat("  p-value:", format.pval(p_unadj, digits = 3), "\n\n")
+
+cat("Adjusted OR (age + emergency surgery):", round(or_adj, 2),
+    "(95% CI:", round(ci_adj[1], 2), "-", round(ci_adj[2], 2), ")\n")
+cat("  p-value:", format.pval(p_adj, digits = 3), "\n\n")
+
+cat("Interpretation: OR > 1 indicates higher mortality in Noncardiac PMI\n")
+cat("                OR < 1 indicates lower mortality in Noncardiac PMI\n\n")
+
 cat("\n--- In-Hospital Mortality: Cardiac vs Noncardiac (Agreed Cases) ---\n\n")
 agreed_mortality_pmi <- agreed_survival %>%
   group_by(PMI_type) %>%
@@ -742,6 +785,49 @@ if(nrow(mort_table_agreed) > 1 && ncol(mort_table_agreed) > 1) {
   cat("  X-squared =", round(chisq_mort_agreed$statistic, 3), "\n")
   cat("  p-value =", format.pval(chisq_mort_agreed$p.value, digits = 3), "\n\n")
 }
+
+# Logistic regression: adjusted for age and emergency surgery
+cat("\n--- Logistic Regression Analysis (Agreed Cases) ---\n\n")
+
+# Prepare data for logistic regression
+agreed_logistic <- agreed_survival %>%
+  mutate(
+    PMI_type_numeric = if_else(PMI_type == "Noncardiac", 1, 0),  # Noncardiac vs Cardiac (reference)
+    age_continuous = leeftijd,
+    emergency_binary = emergency_surg
+  ) %>%
+  filter(!is.na(age_continuous) & !is.na(emergency_binary) & !is.na(death_in_hospital))
+
+# Unadjusted model
+model_unadjusted_agreed <- glm(death_in_hospital ~ PMI_type_numeric,
+                                data = agreed_logistic,
+                                family = binomial(link = "logit"))
+
+# Adjusted model (age + emergency surgery)
+model_adjusted_agreed <- glm(death_in_hospital ~ PMI_type_numeric + age_continuous + emergency_binary,
+                              data = agreed_logistic,
+                              family = binomial(link = "logit"))
+
+# Extract results
+or_unadj_agreed <- exp(coef(model_unadjusted_agreed)["PMI_type_numeric"])
+ci_unadj_agreed <- exp(confint(model_unadjusted_agreed)["PMI_type_numeric",])
+p_unadj_agreed <- summary(model_unadjusted_agreed)$coefficients["PMI_type_numeric", "Pr(>|z|)"]
+
+or_adj_agreed <- exp(coef(model_adjusted_agreed)["PMI_type_numeric"])
+ci_adj_agreed <- exp(confint(model_adjusted_agreed)["PMI_type_numeric",])
+p_adj_agreed <- summary(model_adjusted_agreed)$coefficients["PMI_type_numeric", "Pr(>|z|)"]
+
+cat("Odds Ratios for In-Hospital Mortality (Noncardiac vs Cardiac):\n\n")
+cat("Unadjusted OR:", round(or_unadj_agreed, 2),
+    "(95% CI:", round(ci_unadj_agreed[1], 2), "-", round(ci_unadj_agreed[2], 2), ")\n")
+cat("  p-value:", format.pval(p_unadj_agreed, digits = 3), "\n\n")
+
+cat("Adjusted OR (age + emergency surgery):", round(or_adj_agreed, 2),
+    "(95% CI:", round(ci_adj_agreed[1], 2), "-", round(ci_adj_agreed[2], 2), ")\n")
+cat("  p-value:", format.pval(p_adj_agreed, digits = 3), "\n\n")
+
+cat("Interpretation: OR > 1 indicates higher mortality in Noncardiac PMI\n")
+cat("                OR < 1 indicates lower mortality in Noncardiac PMI\n\n")
 
 # ========== MORTALITY BY PMI CATEGORY ==========
 
@@ -830,13 +916,17 @@ cat("✓ Surgical specialty analysis (Chi-square/Fisher p-values)\n")
 cat("✓ Medication analysis (CLOPIDOGREL, ACETYLSALICYLZUUR, DABIGATRANETEXILAAT, TICAGRELOR)\n")
 cat("✓ ECG analysis by PMI type\n")
 cat("✓ Baseline characteristics tables (NO mortality - baseline only)\n")
-cat("✓ In-hospital mortality analysis with Chi-square/Fisher tests:\n")
-cat("  - Cardiac vs Noncardiac (OBS12 & Agreed)\n")
-cat("  - All PMI categories\n")
-cat("  - T2MI with vs without precipitant (OBS12 & Agreed)\n")
+cat("✓ In-hospital mortality analysis:\n")
+cat("  - Cardiac vs Noncardiac (OBS12 & Agreed) with Chi-square tests\n")
+cat("  - Logistic regression with unadjusted and adjusted OR (age + emergency surgery)\n")
+cat("  - All PMI categories mortality breakdown\n")
+cat("  - T2MI with vs without precipitant (OBS12 & Agreed) with Fisher's exact test\n")
 cat("\nKey points:\n")
 cat("  • Baseline tables: Chi-square test for group comparisons\n")
-cat("  • Mortality analysis: Chi-square/Fisher exact test for mortality comparisons\n")
+cat("  • Mortality analysis:\n")
+cat("    - Chi-square test for Cardiac vs Noncardiac comparisons\n")
+cat("    - Logistic regression for adjusted odds ratios (age + emergency surgery)\n")
+cat("    - Fisher's exact test for T2MI comparisons\n")
 cat("  • NO Cox regression, hazard ratios, or Kaplan-Meier curves\n")
 cat("  • In-hospital mortality based on discharge destination (opname_bestemming)\n")
 cat("\nMORTALITY DATA SOURCE:\n")
@@ -846,3 +936,10 @@ cat("    - 'Overleden (met obductie)' = deceased with autopsy\n")
 cat("    - All other discharge destinations = survived hospitalization\n")
 cat("  • No time-to-event data available (only binary outcome: died vs survived)\n")
 cat("  • Out-of-hospital mortality NOT captured\n")
+cat("\nADJUSTMENT VARIABLES:\n")
+cat("  • Logistic regression models adjusted for:\n")
+cat("    - Age (continuous variable)\n")
+cat("    - Emergency surgery (binary: elective vs emergency)\n")
+cat("  • Reference group: Cardiac PMI\n")
+cat("  • OR > 1: Higher mortality in Noncardiac PMI\n")
+cat("  • OR < 1: Lower mortality in Noncardiac PMI\n")
