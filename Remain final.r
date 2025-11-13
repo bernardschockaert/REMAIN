@@ -145,6 +145,11 @@ agreed_patients <- comparison_pmi %>%
   filter(agreed) %>%
   select(`Participant Id`, PMI_type = PMI_type_12)
 
+# Create disagreed patients dataset
+disagreed_patients <- comparison_pmi %>%
+  filter(!agreed & !is.na(PMI_type_12) & !is.na(PMI_type_34)) %>%
+  select(`Participant Id`, PMI_type_12, PMI_type_34)
+
 # ========== INTER-RATER AGREEMENT (COHEN'S KAPPA) ==========
 
 cat("\n=== INTER-RATER AGREEMENT: COHEN'S KAPPA ===\n")
@@ -909,6 +914,91 @@ if(nrow(agreed_t2mi_mortality) == 2) {
   cat("  p-value =", format.pval(fisher_t2mi_agreed$p.value, digits = 3), "\n\n")
 }
 
+# ========== AGREED VS DISAGREED MORTALITY ANALYSIS ==========
+
+cat("\n\n=== IN-HOSPITAL MORTALITY: AGREED vs DISAGREED CASES ===\n\n")
+
+# Create agreed and disagreed datasets with mortality
+agreed_mortality_data <- obs12 %>%
+  inner_join(agreed_patients, by = "Participant Id") %>%
+  distinct(Pseudonym, .keep_all = TRUE) %>%
+  mutate(Agreement_status = "Agreed")
+
+disagreed_mortality_data <- obs12 %>%
+  inner_join(disagreed_patients, by = "Participant Id") %>%
+  distinct(Pseudonym, .keep_all = TRUE) %>%
+  mutate(Agreement_status = "Disagreed")
+
+# Combine for comparison
+agreement_comparison <- bind_rows(agreed_mortality_data, disagreed_mortality_data)
+
+# Summary table
+cat("--- In-Hospital Mortality by Agreement Status ---\n\n")
+agreement_mort_summary <- agreement_comparison %>%
+  group_by(Agreement_status) %>%
+  summarise(
+    N = n(),
+    Deaths = sum(death_in_hospital == 1, na.rm = TRUE),
+    Mortality_pct = round(Deaths / N * 100, 1),
+    .groups = 'drop'
+  )
+print(agreement_mort_summary)
+
+# Chi-square test
+cat("\nChi-square test (Agreed vs Disagreed):\n")
+agreement_mort_table <- table(agreement_comparison$Agreement_status, agreement_comparison$death_in_hospital)
+if(nrow(agreement_mort_table) > 1 && ncol(agreement_mort_table) > 1) {
+  chisq_agreement <- chisq.test(agreement_mort_table)
+  cat("  X-squared =", round(chisq_agreement$statistic, 3), "\n")
+  cat("  p-value =", format.pval(chisq_agreement$p.value, digits = 3), "\n\n")
+  print(agreement_mort_table)
+}
+
+# Logistic regression: disagreed vs agreed (adjusted for age and emergency surgery)
+cat("\n\n--- Logistic Regression: Disagreed vs Agreed (adjusted) ---\n\n")
+
+agreement_logistic <- agreement_comparison %>%
+  mutate(
+    disagreed_binary = if_else(Agreement_status == "Disagreed", 1, 0),  # Disagreed vs Agreed (reference)
+    age_continuous = leeftijd,
+    emergency_binary = emergency_surg
+  ) %>%
+  filter(!is.na(age_continuous) & !is.na(emergency_binary) & !is.na(death_in_hospital))
+
+# Unadjusted model
+model_unadj_agreement <- glm(death_in_hospital ~ disagreed_binary,
+                              data = agreement_logistic,
+                              family = binomial(link = "logit"))
+
+# Adjusted model
+model_adj_agreement <- glm(death_in_hospital ~ disagreed_binary + age_continuous + emergency_binary,
+                            data = agreement_logistic,
+                            family = binomial(link = "logit"))
+
+# Extract results
+or_unadj_agr <- exp(coef(model_unadj_agreement)["disagreed_binary"])
+ci_unadj_agr <- exp(confint(model_unadj_agreement)["disagreed_binary",])
+p_unadj_agr <- summary(model_unadj_agreement)$coefficients["disagreed_binary", "Pr(>|z|)"]
+
+or_adj_agr <- exp(coef(model_adj_agreement)["disagreed_binary"])
+ci_adj_agr <- exp(confint(model_adj_agreement)["disagreed_binary",])
+p_adj_agr <- summary(model_adj_agreement)$coefficients["disagreed_binary", "Pr(>|z|)"]
+
+cat("Odds Ratios for In-Hospital Mortality (Disagreed vs Agreed):\n\n")
+cat("Unadjusted OR:", round(or_unadj_agr, 2),
+    "(95% CI:", round(ci_unadj_agr[1], 2), "-", round(ci_unadj_agr[2], 2), ")\n")
+cat("  p-value:", format.pval(p_unadj_agr, digits = 3), "\n\n")
+
+cat("Adjusted OR (age + emergency surgery):", round(or_adj_agr, 2),
+    "(95% CI:", round(ci_adj_agr[1], 2), "-", round(ci_adj_agr[2], 2), ")\n")
+cat("  p-value:", format.pval(p_adj_agr, digits = 3), "\n\n")
+
+cat("Interpretation: OR > 1 indicates higher mortality in Disagreed cases\n")
+cat("                OR < 1 indicates lower mortality in Disagreed cases\n\n")
+
+cat("Number of agreed cases:", nrow(agreed_mortality_data), "\n")
+cat("Number of disagreed cases:", nrow(disagreed_mortality_data), "\n")
+
 cat("\n\n=== ANALYSIS COMPLETE ===\n")
 cat("\n✓ Inter-rater agreement (Cohen's Kappa)\n")
 cat("✓ PMI category breakdown (OBS12 vs Agreed)\n")
@@ -921,6 +1011,7 @@ cat("  - Cardiac vs Noncardiac (OBS12 & Agreed) with Chi-square tests\n")
 cat("  - Logistic regression with unadjusted and adjusted OR (age + emergency surgery)\n")
 cat("  - All PMI categories mortality breakdown\n")
 cat("  - T2MI with vs without precipitant (OBS12 & Agreed) with Fisher's exact test\n")
+cat("  - Agreed vs Disagreed cases mortality comparison\n")
 cat("\nKey points:\n")
 cat("  • Baseline tables: Chi-square test for group comparisons\n")
 cat("  • Mortality analysis:\n")
