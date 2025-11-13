@@ -771,6 +771,91 @@ cat("  p-value:", format.pval(p_adj, digits = 3), "\n\n")
 cat("Interpretation: OR > 1 indicates higher mortality in Noncardiac PMI\n")
 cat("                OR < 1 indicates lower mortality in Noncardiac PMI\n\n")
 
+# ========== MORTALITY: PMI TYPE VS OVERALL POPULATION ==========
+
+cat("\n--- In-Hospital Mortality: Each PMI Type vs Overall Population (OBS12) ---\n\n")
+
+# Calculate overall mortality rate
+overall_mortality_rate <- sum(obs12_with_pmi$death_in_hospital == 1, na.rm = TRUE) / nrow(obs12_with_pmi)
+cat("Overall in-hospital mortality rate (OBS12):", round(overall_mortality_rate * 100, 1), "%\n\n")
+
+# Cardiac PMI vs Overall
+cat("CARDIAC PMI vs Overall Population:\n")
+obs12_cardiac_vs_overall <- obs12_with_pmi %>%
+  mutate(
+    is_cardiac = if_else(PMI_type == "Cardiac", 1, 0),
+    age_continuous = leeftijd,
+    emergency_binary = emergency_surg
+  ) %>%
+  filter(!is.na(age_continuous) & !is.na(emergency_binary) & !is.na(death_in_hospital))
+
+# Unadjusted
+model_cardiac_unadj <- glm(death_in_hospital ~ is_cardiac,
+                           data = obs12_cardiac_vs_overall,
+                           family = binomial(link = "logit"))
+
+# Adjusted
+model_cardiac_adj <- glm(death_in_hospital ~ is_cardiac + age_continuous + emergency_binary,
+                         data = obs12_cardiac_vs_overall,
+                         family = binomial(link = "logit"))
+
+or_cardiac_unadj <- exp(coef(model_cardiac_unadj)["is_cardiac"])
+ci_cardiac_unadj <- exp(confint(model_cardiac_unadj)["is_cardiac",])
+p_cardiac_unadj <- summary(model_cardiac_unadj)$coefficients["is_cardiac", "Pr(>|z|)"]
+
+or_cardiac_adj <- exp(coef(model_cardiac_adj)["is_cardiac"])
+ci_cardiac_adj <- exp(confint(model_cardiac_adj)["is_cardiac",])
+p_cardiac_adj <- summary(model_cardiac_adj)$coefficients["is_cardiac", "Pr(>|z|)"]
+
+cat("  Unadjusted OR:", round(or_cardiac_unadj, 2),
+    "(95% CI:", round(ci_cardiac_unadj[1], 2), "-", round(ci_cardiac_unadj[2], 2), ")\n")
+cat("  p-value:", format.pval(p_cardiac_unadj, digits = 3), "\n\n")
+
+cat("  Adjusted OR (age + emergency surgery):", round(or_cardiac_adj, 2),
+    "(95% CI:", round(ci_cardiac_adj[1], 2), "-", round(ci_cardiac_adj[2], 2), ")\n")
+cat("  p-value:", format.pval(p_cardiac_adj, digits = 3), "\n\n")
+
+# Noncardiac PMI vs Overall
+cat("NONCARDIAC PMI vs Overall Population:\n")
+obs12_noncardiac_vs_overall <- obs12_with_pmi %>%
+  mutate(
+    is_noncardiac = if_else(PMI_type == "Noncardiac", 1, 0),
+    age_continuous = leeftijd,
+    emergency_binary = emergency_surg
+  ) %>%
+  filter(!is.na(age_continuous) & !is.na(emergency_binary) & !is.na(death_in_hospital))
+
+# Unadjusted
+model_noncardiac_unadj <- glm(death_in_hospital ~ is_noncardiac,
+                              data = obs12_noncardiac_vs_overall,
+                              family = binomial(link = "logit"))
+
+# Adjusted
+model_noncardiac_adj <- glm(death_in_hospital ~ is_noncardiac + age_continuous + emergency_binary,
+                            data = obs12_noncardiac_vs_overall,
+                            family = binomial(link = "logit"))
+
+or_noncardiac_unadj <- exp(coef(model_noncardiac_unadj)["is_noncardiac"])
+ci_noncardiac_unadj <- exp(confint(model_noncardiac_unadj)["is_noncardiac",])
+p_noncardiac_unadj <- summary(model_noncardiac_unadj)$coefficients["is_noncardiac", "Pr(>|z|)"]
+
+or_noncardiac_adj <- exp(coef(model_noncardiac_adj)["is_noncardiac"])
+ci_noncardiac_adj <- exp(confint(model_noncardiac_adj)["is_noncardiac",])
+p_noncardiac_adj <- summary(model_noncardiac_adj)$coefficients["is_noncardiac", "Pr(>|z|)"]
+
+cat("  Unadjusted OR:", round(or_noncardiac_unadj, 2),
+    "(95% CI:", round(ci_noncardiac_unadj[1], 2), "-", round(ci_noncardiac_unadj[2], 2), ")\n")
+cat("  p-value:", format.pval(p_noncardiac_unadj, digits = 3), "\n\n")
+
+cat("  Adjusted OR (age + emergency surgery):", round(or_noncardiac_adj, 2),
+    "(95% CI:", round(ci_noncardiac_adj[1], 2), "-", round(ci_noncardiac_adj[2], 2), ")\n")
+cat("  p-value:", format.pval(p_noncardiac_adj, digits = 3), "\n\n")
+
+cat("Interpretation:\n")
+cat("  OR > 1: PMI type has higher mortality than overall population\n")
+cat("  OR < 1: PMI type has lower mortality than overall population\n")
+cat("  OR = 1: PMI type has same mortality as overall population\n\n")
+
 cat("\n--- In-Hospital Mortality: Cardiac vs Noncardiac (Agreed Cases) ---\n\n")
 agreed_mortality_pmi <- agreed_survival %>%
   group_by(PMI_type) %>%
