@@ -73,11 +73,12 @@ data_included <- data_included %>%
   ) %>%
   # CRITICAL: Calculate survival outcomes ONCE using Date from coupling
   # These variables will be inherited by obs12_with_pmi and agreed_survival
+  # NOTE: Only 30-day mortality used (in-hospital deaths only, no out-of-hospital data available)
   mutate(
     death_30d = if_else(!is.na(time_to_death) & time_to_death <= 30, 1, 0),
     survival_time_30d = if_else(is.na(time_to_death), 30, pmin(time_to_death, 30)),
-    death_365d = if_else(!is.na(time_to_death) & time_to_death <= 365, 1, 0),
-    survival_time_365d = if_else(is.na(time_to_death), 365, pmin(time_to_death, 365))
+    # In-hospital mortality (any death during hospitalization, regardless of timing)
+    death_in_hospital = if_else(!is.na(deceasedDateTime), 1, 0)
   ) %>%
   mutate(
     RCRI_CAD = if_else(`history#Coronary Artery Disease` == 1, 1, 0, missing = 0),
@@ -730,35 +731,6 @@ if(nrow(obs12_t2mi_data) >= 5) {
   cat("Insufficient T2MI cases in OBS12 for 30-day survival analysis\n")
 }
 
-# OBS12 - 365-day survival for T2MI
-if(nrow(obs12_t2mi_data) >= 5) {
-  cat("\n--- 365-Day Survival: T2MI with vs without cause (OBS12) ---\n")
-  surv_obj_365d_t2mi_obs12 <- Surv(time = obs12_t2mi_data$survival_time_365d, 
-                                   event = obs12_t2mi_data$death_365d)
-  fit_365d_t2mi_obs12 <- survfit(surv_obj_365d_t2mi_obs12 ~ T2MI_group, data = obs12_t2mi_data)
-  survdiff_365d_t2mi_obs12 <- survdiff(surv_obj_365d_t2mi_obs12 ~ T2MI_group, data = obs12_t2mi_data)
-  
-  pval_label_365d_t2mi_obs12 <- paste0("Log-rank p = ", format.pval(survdiff_365d_t2mi_obs12$pvalue, digits = 3))
-  
-  ggsurvplot(
-    fit_365d_t2mi_obs12,
-    data = obs12_t2mi_data,
-    risk.table = TRUE,
-    pval = pval_label_365d_t2mi_obs12,
-    conf.int = TRUE,
-    xlim = c(0, 365),
-    xlab = "Time (days)",
-    ylab = "Survival probability",
-    title = "365-Day Survival: T2MI with vs without Cause (OBS12)",
-    legend.title = "T2MI Type",
-    legend.labs = c("T2MI with cause", "T2MI without cause"),
-    break.time.by = 60,
-    palette = c("#FC4E07", "#00AFBB")
-  )
-} else {
-  cat("Insufficient T2MI cases in OBS12 for 365-day survival analysis\n")
-}
-
 # Agreed cases - 30-day survival for T2MI
 if(nrow(agreed_t2mi_data) >= 5) {
   cat("\n--- 30-Day Survival: T2MI with vs without cause (Agreed Cases) ---\n")
@@ -786,35 +758,6 @@ if(nrow(agreed_t2mi_data) >= 5) {
   )
 } else {
   cat("Insufficient T2MI cases in Agreed Cases for 30-day survival analysis\n")
-}
-
-# Agreed cases - 365-day survival for T2MI
-if(nrow(agreed_t2mi_data) >= 5) {
-  cat("\n--- 365-Day Survival: T2MI with vs without cause (Agreed Cases) ---\n")
-  surv_obj_365d_t2mi_agreed <- Surv(time = agreed_t2mi_data$survival_time_365d, 
-                                    event = agreed_t2mi_data$death_365d)
-  fit_365d_t2mi_agreed <- survfit(surv_obj_365d_t2mi_agreed ~ T2MI_group, data = agreed_t2mi_data)
-  survdiff_365d_t2mi_agreed <- survdiff(surv_obj_365d_t2mi_agreed ~ T2MI_group, data = agreed_t2mi_data)
-  
-  pval_label_365d_t2mi_agreed <- paste0("Log-rank p = ", format.pval(survdiff_365d_t2mi_agreed$pvalue, digits = 3))
-  
-  ggsurvplot(
-    fit_365d_t2mi_agreed,
-    data = agreed_t2mi_data,
-    risk.table = TRUE,
-    pval = pval_label_365d_t2mi_agreed,
-    conf.int = TRUE,
-    xlim = c(0, 365),
-    xlab = "Time (days)",
-    ylab = "Survival probability",
-    title = "365-Day Survival: T2MI with vs without Cause (Agreed Cases)",
-    legend.title = "T2MI Type",
-    legend.labs = c("T2MI with cause", "T2MI without cause"),
-    break.time.by = 60,
-    palette = c("#FC4E07", "#00AFBB")
-  )
-} else {
-  cat("Insufficient T2MI cases in Agreed Cases for 365-day survival analysis\n")
 }
 
 # ========== SHAPIRO-WILK NORMALITY TESTS ==========
@@ -943,9 +886,11 @@ cat("\nNote: Fisher's exact test is used when N < 20; Chi-square test otherwise.
 cat("\n\n=== KAPLAN-MEIER CURVES: CARDIAC vs NONCARDIAC ===\n")
 cat("(Log-rank Mantel-Cox test for curve comparison)\n\n")
 
-# ========== MORTALITY SUMMARY (for KM curve verification) ==========
+# ========== MORTALITY SUMMARY ==========
 
-cat("\n--- MORTALITY SUMMARY FOR KM CURVE VERIFICATION ---\n\n")
+cat("\n--- MORTALITY SUMMARY ---\n")
+cat("NOTE: Mortality data limited to in-hospital deaths only.\n")
+cat("Out-of-hospital deaths are not captured in this dataset.\n\n")
 
 cat("OBS12 mortality by PMI type:\n")
 obs12_mortality_summary <- obs12_with_pmi %>%
@@ -953,9 +898,9 @@ obs12_mortality_summary <- obs12_with_pmi %>%
   summarise(
     N = n(),
     Deaths_30d = sum(death_30d == 1, na.rm = TRUE),
-    Mortality_30d = round(Deaths_30d / N * 100, 1),
-    Deaths_365d = sum(death_365d == 1, na.rm = TRUE),
-    Mortality_365d = round(Deaths_365d / N * 100, 1)
+    Mortality_30d_pct = round(Deaths_30d / N * 100, 1),
+    Deaths_in_hospital = sum(death_in_hospital == 1, na.rm = TRUE),
+    Mortality_in_hospital_pct = round(Deaths_in_hospital / N * 100, 1)
   )
 print(obs12_mortality_summary)
 
@@ -965,65 +910,66 @@ agreed_mortality_summary <- agreed_survival %>%
   summarise(
     N = n(),
     Deaths_30d = sum(death_30d == 1, na.rm = TRUE),
-    Mortality_30d = round(Deaths_30d / N * 100, 1),
-    Deaths_365d = sum(death_365d == 1, na.rm = TRUE),
-    Mortality_365d = round(Deaths_365d / N * 100, 1)
+    Mortality_30d_pct = round(Deaths_30d / N * 100, 1),
+    Deaths_in_hospital = sum(death_in_hospital == 1, na.rm = TRUE),
+    Mortality_in_hospital_pct = round(Deaths_in_hospital / N * 100, 1)
   )
 print(agreed_mortality_summary)
 
-cat("\nNote: These values should match the KM curve risk tables.\n\n")
+cat("\nNote: 30-day and in-hospital mortality represent the same deaths captured during hospitalization.\n")
+cat("These values should match the 30-day KM curve risk tables.\n\n")
 
-# OBS12 - 365-day survival (includes 30-day mark on x-axis)
-cat("\n--- 365-Day Survival (with 30-day mark): Cardiac vs Noncardiac (OBS12) ---\n")
-surv_obj_365d_obs12 <- Surv(time = obs12_with_pmi$survival_time_365d, 
-                             event = obs12_with_pmi$death_365d)
-fit_365d_obs12 <- survfit(surv_obj_365d_obs12 ~ PMI_type, data = obs12_with_pmi)
-survdiff_365d_obs12 <- survdiff(surv_obj_365d_obs12 ~ PMI_type, data = obs12_with_pmi)
+# OBS12 - 30-day survival
+cat("\n--- 30-Day Survival: Cardiac vs Noncardiac (OBS12) ---\n")
+surv_obj_30d_obs12 <- Surv(time = obs12_with_pmi$survival_time_30d,
+                            event = obs12_with_pmi$death_30d)
+fit_30d_obs12 <- survfit(surv_obj_30d_obs12 ~ PMI_type, data = obs12_with_pmi)
+survdiff_30d_obs12 <- survdiff(surv_obj_30d_obs12 ~ PMI_type, data = obs12_with_pmi)
 
-pval_label_365d_obs12 <- paste0(
-  "Log-rank χ² = ", round(survdiff_365d_obs12$chisq, 2), ", p = ", format.pval(survdiff_365d_obs12$pvalue, digits = 3)
+pval_label_30d_obs12 <- paste0(
+  "Log-rank χ² = ", round(survdiff_30d_obs12$chisq, 2), ", p = ", format.pval(survdiff_30d_obs12$pvalue, digits = 3)
 )
 
 ggsurvplot(
-  fit_365d_obs12,
+  fit_30d_obs12,
   data = obs12_with_pmi,
   risk.table = TRUE,
-  pval = pval_label_365d_obs12,
+  pval = pval_label_30d_obs12,
   conf.int = TRUE,
-  xlim = c(0, 365),
+  xlim = c(0, 30),
   xlab = "Time (days)",
   ylab = "Survival probability",
-  title = "365-Day Survival: Cardiac vs Noncardiac PMI (OBS12)",
+  title = "30-Day Survival: Cardiac vs Noncardiac PMI (OBS12)",
   legend.title = "PMI Type",
   legend.labs = c("Cardiac", "Noncardiac"),
-  break.time.by = 30,
+  break.time.by = 5,
   palette = c("#E7B800", "#2E9FDF")
 )
 
-# Agreed cases - 365-day survival (includes 30-day mark on x-axis)
-cat("\n--- 365-Day Survival (with 30-day mark): Cardiac vs Noncardiac (Agreed Cases) ---\n")
-surv_obj_365d_agreed <- Surv(time = agreed_survival$survival_time_365d, 
-                              event = agreed_survival$death_365d)
-fit_365d_agreed <- survfit(surv_obj_365d_agreed ~ PMI_type, data = agreed_survival)
-survdiff_365d_agreed <- survdiff(surv_obj_365d_agreed ~ PMI_type, data = agreed_survival)
+# Agreed cases - 30-day survival
+cat("\n--- 30-Day Survival: Cardiac vs Noncardiac (Agreed Cases) ---\n")
+surv_obj_30d_agreed <- Surv(time = agreed_survival$survival_time_30d,
+                             event = agreed_survival$death_30d)
+fit_30d_agreed <- survfit(surv_obj_30d_agreed ~ PMI_type, data = agreed_survival)
+survdiff_30d_agreed <- survdiff(surv_obj_30d_agreed ~ PMI_type, data = agreed_survival)
 
-pval_label_365d_agreed <- paste0(
-  "Log-rank χ² = ", round(survdiff_365d_agreed$chisq, 2), ", p = ", format.pval(survdiff_365d_agreed$pvalue, digits = 3)
+pval_label_30d_agreed <- paste0(
+  "Log-rank χ² = ", round(survdiff_30d_agreed$chisq, 2), ", p = ", format.pval(survdiff_30d_agreed$pvalue, digits = 3)
 )
 
 ggsurvplot(
-  fit_365d_agreed,
+  fit_30d_agreed,
   data = agreed_survival,
   risk.table = TRUE,
-  pval = pval_label_365d_agreed,
+  pval = pval_label_30d_agreed,
   conf.int = TRUE,
-  xlim = c(0, 365),
+  xlim = c(0, 30),
   xlab = "Time (days)",
   ylab = "Survival probability",
-  title = "365-Day Survival: Cardiac vs Noncardiac PMI (Agreed Cases)",
+  title = "30-Day Survival: Cardiac vs Noncardiac PMI (Agreed Cases)",
   legend.title = "PMI Type",
   legend.labs = c("Cardiac", "Noncardiac"),
-  break.time.by = 30,
+  break.time.by = 5,
   palette = c("#E7B800", "#2E9FDF")
 )
 
@@ -1031,14 +977,21 @@ cat("\n\n=== ANALYSIS COMPLETE ===\n")
 cat("\n✓ Inter-rater agreement (Cohen's Kappa)\n")
 cat("✓ PMI category breakdown (OBS12 vs Agreed)\n")
 cat("✓ Surgical specialty analysis (Chi-square/Fisher p-values)\n")
+cat("✓ Medication analysis (CLOPIDOGREL, ACETYLSALICYLZUUR, DABIGATRANETEXILAAT, TICAGRELOR)\n")
+cat("✓ ECG analysis by PMI type\n")
 cat("✓ Baseline characteristics tables (NO mortality - baseline only)\n")
-cat("✓ Mortality summary for KM curve verification\n")
-cat("✓ Kaplan-Meier curves (365-day) with Log-rank test:\n")
+cat("✓ Mortality summary (30-day and in-hospital)\n")
+cat("✓ Kaplan-Meier curves (30-day ONLY) with Log-rank test:\n")
 cat("  - Cardiac vs Noncardiac (OBS12 & Agreed)\n")
 cat("  - PMI categories (30-day)\n")
-cat("  - T2MI with vs without cause (30-day & 365-day)\n")
+cat("  - T2MI with vs without cause (30-day)\n")
 cat("\nKey points:\n")
 cat("  • Baseline tables: Chi-square test for group comparisons\n")
 cat("  • KM curves: Log-rank (Mantel-Cox) test for survival comparison\n")
 cat("  • NO Cox regression or hazard ratios included\n")
 cat("  • Uniform Date from coupling file for all survival calculations\n")
+cat("\nIMPORTANT LIMITATION:\n")
+cat("  • Mortality data limited to IN-HOSPITAL deaths only\n")
+cat("  • Out-of-hospital deaths NOT captured in this dataset\n")
+cat("  • 365-day mortality analysis removed due to incomplete follow-up\n")
+cat("  • 30-day mortality is the primary outcome (most clinically relevant for PMI)\n")
