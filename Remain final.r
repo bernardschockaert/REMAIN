@@ -856,6 +856,129 @@ cat("  OR > 1: PMI type has higher mortality than overall population\n")
 cat("  OR < 1: PMI type has lower mortality than overall population\n")
 cat("  OR = 1: PMI type has same mortality as overall population\n\n")
 
+# ========== RCRI AND IN-HOSPITAL MORTALITY ANALYSIS ==========
+
+cat("\n\n========== RCRI AND IN-HOSPITAL MORTALITY ANALYSIS ==========\n\n")
+
+# 1. Overall OBS12 Population
+cat("--- RCRI vs In-Hospital Mortality (Overall OBS12 Population) ---\n\n")
+
+rcri_mortality_overall <- obs12_with_pmi %>%
+  group_by(RCRI_score) %>%
+  summarise(
+    N = n(),
+    Deaths = sum(death_in_hospital == 1, na.rm = TRUE),
+    Mortality_pct = round(Deaths / N * 100, 1),
+    .groups = 'drop'
+  ) %>%
+  arrange(RCRI_score)
+
+cat("Mortality by RCRI Score:\n")
+print(rcri_mortality_overall, n = Inf)
+
+# Trend test using logistic regression (RCRI as continuous predictor)
+rcri_logistic_overall <- obs12_with_pmi %>%
+  filter(!is.na(RCRI_score) & !is.na(death_in_hospital))
+
+if(nrow(rcri_logistic_overall) > 0) {
+  model_rcri_overall <- glm(death_in_hospital ~ RCRI_score,
+                            data = rcri_logistic_overall,
+                            family = binomial(link = "logit"))
+
+  or_rcri_overall <- exp(coef(model_rcri_overall)["RCRI_score"])
+  ci_rcri_overall <- exp(confint(model_rcri_overall)["RCRI_score",])
+  p_rcri_overall <- summary(model_rcri_overall)$coefficients["RCRI_score", "Pr(>|z|)"]
+
+  cat("\nOdds Ratio per 1-point increase in RCRI:\n")
+  cat("  OR:", round(or_rcri_overall, 2),
+      "(95% CI:", round(ci_rcri_overall[1], 2), "-", round(ci_rcri_overall[2], 2), ")\n")
+  cat("  p-value:", format.pval(p_rcri_overall, digits = 3), "\n")
+
+  # Cochran-Armitage trend test (using proportional increase)
+  cat("\nInterpretation: OR > 1 indicates increasing mortality with higher RCRI\n\n")
+}
+
+# 2. Cardiac PMI Group
+cat("\n--- RCRI vs In-Hospital Mortality (Cardiac PMI Group) ---\n\n")
+
+cardiac_group <- obs12_with_pmi %>%
+  filter(PMI_type == "Cardiac")
+
+rcri_mortality_cardiac <- cardiac_group %>%
+  group_by(RCRI_score) %>%
+  summarise(
+    N = n(),
+    Deaths = sum(death_in_hospital == 1, na.rm = TRUE),
+    Mortality_pct = round(Deaths / N * 100, 1),
+    .groups = 'drop'
+  ) %>%
+  arrange(RCRI_score)
+
+cat("Mortality by RCRI Score (Cardiac PMI):\n")
+print(rcri_mortality_cardiac, n = Inf)
+
+rcri_logistic_cardiac <- cardiac_group %>%
+  filter(!is.na(RCRI_score) & !is.na(death_in_hospital))
+
+if(nrow(rcri_logistic_cardiac) > 0) {
+  model_rcri_cardiac <- glm(death_in_hospital ~ RCRI_score,
+                            data = rcri_logistic_cardiac,
+                            family = binomial(link = "logit"))
+
+  or_rcri_cardiac <- exp(coef(model_rcri_cardiac)["RCRI_score"])
+  ci_rcri_cardiac <- exp(confint(model_rcri_cardiac)["RCRI_score",])
+  p_rcri_cardiac <- summary(model_rcri_cardiac)$coefficients["RCRI_score", "Pr(>|z|)"]
+
+  cat("\nOdds Ratio per 1-point increase in RCRI (Cardiac PMI):\n")
+  cat("  OR:", round(or_rcri_cardiac, 2),
+      "(95% CI:", round(ci_rcri_cardiac[1], 2), "-", round(ci_rcri_cardiac[2], 2), ")\n")
+  cat("  p-value:", format.pval(p_rcri_cardiac, digits = 3), "\n")
+  cat("\nInterpretation: OR > 1 indicates increasing mortality with higher RCRI in Cardiac PMI\n\n")
+}
+
+# 3. Noncardiac (Extra-cardiac) PMI Group
+cat("\n--- RCRI vs In-Hospital Mortality (Noncardiac/Extra-cardiac PMI Group) ---\n\n")
+
+noncardiac_group <- obs12_with_pmi %>%
+  filter(PMI_type == "Noncardiac")
+
+rcri_mortality_noncardiac <- noncardiac_group %>%
+  group_by(RCRI_score) %>%
+  summarise(
+    N = n(),
+    Deaths = sum(death_in_hospital == 1, na.rm = TRUE),
+    Mortality_pct = round(Deaths / N * 100, 1),
+    .groups = 'drop'
+  ) %>%
+  arrange(RCRI_score)
+
+cat("Mortality by RCRI Score (Noncardiac PMI):\n")
+print(rcri_mortality_noncardiac, n = Inf)
+
+rcri_logistic_noncardiac <- noncardiac_group %>%
+  filter(!is.na(RCRI_score) & !is.na(death_in_hospital))
+
+if(nrow(rcri_logistic_noncardiac) > 0) {
+  model_rcri_noncardiac <- glm(death_in_hospital ~ RCRI_score,
+                                data = rcri_logistic_noncardiac,
+                                family = binomial(link = "logit"))
+
+  or_rcri_noncardiac <- exp(coef(model_rcri_noncardiac)["RCRI_score"])
+  ci_rcri_noncardiac <- exp(confint(model_rcri_noncardiac)["RCRI_score",])
+  p_rcri_noncardiac <- summary(model_rcri_noncardiac)$coefficients["RCRI_score", "Pr(>|z|)"]
+
+  cat("\nOdds Ratio per 1-point increase in RCRI (Noncardiac PMI):\n")
+  cat("  OR:", round(or_rcri_noncardiac, 2),
+      "(95% CI:", round(ci_rcri_noncardiac[1], 2), "-", round(ci_rcri_noncardiac[2], 2), ")\n")
+  cat("  p-value:", format.pval(p_rcri_noncardiac, digits = 3), "\n")
+  cat("\nInterpretation: OR > 1 indicates increasing mortality with higher RCRI in Noncardiac PMI\n\n")
+}
+
+# Summary comparison
+cat("\n--- Summary: RCRI Effect on In-Hospital Mortality ---\n\n")
+cat("This analysis examines whether in-hospital mortality increases with each 1-point increase in RCRI score.\n")
+cat("An OR > 1 with p < 0.05 indicates a significant increase in mortality risk per RCRI point.\n\n")
+
 cat("\n--- In-Hospital Mortality: Cardiac vs Noncardiac (Agreed Cases) ---\n\n")
 agreed_mortality_pmi <- agreed_survival %>%
   group_by(PMI_type) %>%
