@@ -1290,13 +1290,30 @@ pmi_causes_chart_data <- obs12_with_pmi %>%
   group_by(PMI_category, PMI_type) %>%
   summarise(N = n(), .groups = 'drop') %>%
   mutate(
-    Percentage = round(N / sum(N) * 100, 1)
+    Percentage = round(N / sum(N) * 100, 1),
+    # Rename PMI categories for cleaner display
+    PMI_category_display = case_when(
+      PMI_category == "T2MI_with_cause" ~ "T2MI+",
+      PMI_category == "T2MI_without_cause" ~ "T2MI-",
+      PMI_category == "renal_fail" ~ "Acute renal failure",
+      PMI_category == "ctrauma" ~ "Trauma",
+      PMI_category == "stroke" ~ "Stroke",
+      PMI_category == "sepsis" ~ "Sepsis",
+      PMI_category == "tachycardia" ~ "Tachyarrhythmia",
+      PMI_category == "ex_car_other" ~ "other",
+      is.na(PMI_category) ~ "NA",
+      TRUE ~ as.character(PMI_category)
+    )
   ) %>%
-  arrange(desc(Percentage))
+  arrange(desc(Percentage)) %>%
+  # Reorder: NA should be at bottom (least common), so reverse the percentage order for plotting
+  mutate(
+    plot_order = if_else(PMI_category_display == "NA", -1, Percentage)  # NA gets lowest order
+  )
 
 # Create bar chart with color coding
 # Light blue for Noncardiac (extracardiac), Light red for Cardiac
-pmi_causes_plot <- ggplot(pmi_causes_chart_data, aes(x = reorder(PMI_category, Percentage),
+pmi_causes_plot <- ggplot(pmi_causes_chart_data, aes(x = reorder(PMI_category_display, plot_order),
                                                        y = Percentage,
                                                        fill = PMI_type)) +
   geom_bar(stat = "identity") +
@@ -1327,7 +1344,7 @@ cat("Bar chart saved as 'PMI_Causes_BarChart_OBS12.png'\n\n")
 
 # Print the data table
 cat("PMI Causes Distribution:\n")
-print(pmi_causes_chart_data, n = Inf)
+print(pmi_causes_chart_data %>% select(PMI_category_display, PMI_type, N, Percentage), n = Inf)
 cat("\n")
 
 cat("\n--- In-Hospital Mortality by PMI Category (Agreed Cases) ---\n\n")
