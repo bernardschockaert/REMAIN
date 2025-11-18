@@ -856,6 +856,72 @@ cat("  OR > 1: PMI type has higher mortality than overall population\n")
 cat("  OR < 1: PMI type has lower mortality than overall population\n")
 cat("  OR = 1: PMI type has same mortality as overall population\n\n")
 
+# ========== EMERGENCY VS NON-EMERGENCY SURGERY MORTALITY ANALYSIS ==========
+
+cat("\n\n========== EMERGENCY VS NON-EMERGENCY SURGERY AND IN-HOSPITAL MORTALITY ==========\n\n")
+
+emergency_mortality_summary <- obs12_with_pmi %>%
+  mutate(Surgery_type = if_else(emergency_surg == 1, "Emergency", "Non-Emergency")) %>%
+  group_by(Surgery_type) %>%
+  summarise(
+    N = n(),
+    Deaths = sum(death_in_hospital == 1, na.rm = TRUE),
+    Mortality_pct = round(Deaths / N * 100, 1),
+    .groups = 'drop'
+  )
+
+cat("In-Hospital Mortality by Surgery Type:\n")
+print(emergency_mortality_summary, n = Inf)
+
+# Chi-square test
+emergency_table <- table(obs12_with_pmi$emergency_surg, obs12_with_pmi$death_in_hospital)
+
+if(nrow(emergency_table) > 1 && ncol(emergency_table) > 1) {
+  chisq_emergency <- chisq.test(emergency_table)
+  cat("\nChi-square test:\n")
+  cat("  X-squared =", round(chisq_emergency$statistic, 3), "\n")
+  cat("  p-value =", format.pval(chisq_emergency$p.value, digits = 3), "\n\n")
+}
+
+# Logistic regression
+emergency_logistic <- obs12_with_pmi %>%
+  mutate(
+    age_continuous = leeftijd
+  ) %>%
+  filter(!is.na(emergency_surg) & !is.na(death_in_hospital) & !is.na(age_continuous))
+
+if(nrow(emergency_logistic) > 0) {
+  # Unadjusted model
+  model_emergency_unadj <- glm(death_in_hospital ~ emergency_surg,
+                               data = emergency_logistic,
+                               family = binomial(link = "logit"))
+
+  # Adjusted model (age only, since emergency is the exposure)
+  model_emergency_adj <- glm(death_in_hospital ~ emergency_surg + age_continuous,
+                             data = emergency_logistic,
+                             family = binomial(link = "logit"))
+
+  or_emergency_unadj <- exp(coef(model_emergency_unadj)["emergency_surg"])
+  ci_emergency_unadj <- exp(confint(model_emergency_unadj)["emergency_surg",])
+  p_emergency_unadj <- summary(model_emergency_unadj)$coefficients["emergency_surg", "Pr(>|z|)"]
+
+  or_emergency_adj <- exp(coef(model_emergency_adj)["emergency_surg"])
+  ci_emergency_adj <- exp(confint(model_emergency_adj)["emergency_surg",])
+  p_emergency_adj <- summary(model_emergency_adj)$coefficients["emergency_surg", "Pr(>|z|)"]
+
+  cat("Odds Ratios for In-Hospital Mortality (Emergency vs Non-Emergency):\n\n")
+  cat("Unadjusted OR:", round(or_emergency_unadj, 2),
+      "(95% CI:", round(ci_emergency_unadj[1], 2), "-", round(ci_emergency_unadj[2], 2), ")\n")
+  cat("  p-value:", format.pval(p_emergency_unadj, digits = 3), "\n\n")
+
+  cat("Adjusted OR (age):", round(or_emergency_adj, 2),
+      "(95% CI:", round(ci_emergency_adj[1], 2), "-", round(ci_emergency_adj[2], 2), ")\n")
+  cat("  p-value:", format.pval(p_emergency_adj, digits = 3), "\n\n")
+
+  cat("Interpretation: OR > 1 indicates higher mortality in Emergency surgery\n")
+  cat("                OR < 1 indicates lower mortality in Emergency surgery\n\n")
+}
+
 # ========== RCRI AND IN-HOSPITAL MORTALITY ANALYSIS ==========
 
 cat("\n\n========== RCRI AND IN-HOSPITAL MORTALITY ANALYSIS ==========\n\n")
@@ -1214,6 +1280,55 @@ obs12_mortality_category <- obs12_with_pmi %>%
   ) %>%
   arrange(desc(N))
 print(obs12_mortality_category, n = Inf)
+
+# ========== BAR CHART: PMI CAUSES AS PERCENTAGE ==========
+
+cat("\n--- Creating Bar Chart of PMI Causes (OBS12) ---\n")
+
+# Prepare data for bar chart
+pmi_causes_chart_data <- obs12_with_pmi %>%
+  group_by(PMI_category, PMI_type) %>%
+  summarise(N = n(), .groups = 'drop') %>%
+  mutate(
+    Percentage = round(N / sum(N) * 100, 1)
+  ) %>%
+  arrange(desc(Percentage))
+
+# Create bar chart with color coding
+# Light blue for Noncardiac (extracardiac), Light red for Cardiac
+pmi_causes_plot <- ggplot(pmi_causes_chart_data, aes(x = reorder(PMI_category, Percentage),
+                                                       y = Percentage,
+                                                       fill = PMI_type)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("Cardiac" = "#FFB6C1", "Noncardiac" = "#ADD8E6")) +  # Light red and light blue
+  coord_flip() +
+  labs(
+    title = "PMI Causes Distribution (OBS12)",
+    subtitle = "Percentage of Total Cases",
+    x = "PMI Category",
+    y = "Percentage (%)",
+    fill = "PMI Type"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    plot.subtitle = element_text(hjust = 0.5, size = 12),
+    axis.text.y = element_text(size = 10),
+    axis.text.x = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  geom_text(aes(label = paste0(Percentage, "%")),
+            hjust = -0.1,
+            size = 3)
+
+# Save the plot
+ggsave("PMI_Causes_BarChart_OBS12.png", plot = pmi_causes_plot, width = 10, height = 8, dpi = 300)
+cat("Bar chart saved as 'PMI_Causes_BarChart_OBS12.png'\n\n")
+
+# Print the data table
+cat("PMI Causes Distribution:\n")
+print(pmi_causes_chart_data, n = Inf)
+cat("\n")
 
 cat("\n--- In-Hospital Mortality by PMI Category (Agreed Cases) ---\n\n")
 agreed_mortality_category <- agreed_survival %>%
