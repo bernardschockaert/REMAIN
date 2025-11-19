@@ -1045,15 +1045,15 @@ cat("\n--- Summary: RCRI Effect on In-Hospital Mortality ---\n\n")
 cat("This analysis examines whether in-hospital mortality increases with each 1-point increase in RCRI score.\n")
 cat("An OR > 1 with p < 0.05 indicates a significant increase in mortality risk per RCRI point.\n\n")
 
-# ========== RCRI ≥2 ANALYSIS ==========
+# ========== RCRI >2 ANALYSIS ==========
 
-cat("\n\n========== RCRI ≥2 AND IN-HOSPITAL MORTALITY ANALYSIS ==========\n\n")
+cat("\n\n========== RCRI >2 AND IN-HOSPITAL MORTALITY ANALYSIS ==========\n\n")
 
 # 1. Overall OBS12 Population
-cat("--- RCRI ≥2 vs In-Hospital Mortality (Overall OBS12 Population) ---\n\n")
+cat("--- RCRI >2 vs In-Hospital Mortality (Overall OBS12 Population) ---\n\n")
 
 rcri_high_mortality_overall <- obs12_with_pmi %>%
-  mutate(RCRI_high = if_else(RCRI_score >= 2, "RCRI ≥2", "RCRI <2")) %>%
+  mutate(RCRI_high = if_else(RCRI_score > 2, "RCRI >2", "RCRI ≤2")) %>%
   group_by(RCRI_high) %>%
   summarise(
     N = n(),
@@ -1062,12 +1062,12 @@ rcri_high_mortality_overall <- obs12_with_pmi %>%
     .groups = 'drop'
   )
 
-cat("Mortality by RCRI ≥2:\n")
+cat("Mortality by RCRI >2:\n")
 print(rcri_high_mortality_overall, n = Inf)
 
 # Chi-square test
 rcri_high_table_overall <- table(
-  obs12_with_pmi %>% mutate(RCRI_high = if_else(RCRI_score >= 2, 1, 0)) %>% pull(RCRI_high),
+  obs12_with_pmi %>% mutate(RCRI_high = if_else(RCRI_score > 2, 1, 0)) %>% pull(RCRI_high),
   obs12_with_pmi$death_in_hospital
 )
 
@@ -1080,7 +1080,7 @@ if(nrow(rcri_high_table_overall) > 1 && ncol(rcri_high_table_overall) > 1) {
 
 # Logistic regression
 rcri_high_logistic_overall <- obs12_with_pmi %>%
-  mutate(RCRI_high = if_else(RCRI_score >= 2, 1, 0)) %>%
+  mutate(RCRI_high = if_else(RCRI_score > 2, 1, 0)) %>%
   filter(!is.na(RCRI_high) & !is.na(death_in_hospital))
 
 if(nrow(rcri_high_logistic_overall) > 0) {
@@ -1092,18 +1092,18 @@ if(nrow(rcri_high_logistic_overall) > 0) {
   ci_rcri_high_overall <- exp(confint(model_rcri_high_overall)["RCRI_high",])
   p_rcri_high_overall <- summary(model_rcri_high_overall)$coefficients["RCRI_high", "Pr(>|z|)"]
 
-  cat("\nOdds Ratio (RCRI ≥2 vs RCRI <2):\n")
+  cat("\nOdds Ratio (RCRI >2 vs RCRI ≤2):\n")
   cat("  OR:", round(or_rcri_high_overall, 2),
       "(95% CI:", round(ci_rcri_high_overall[1], 2), "-", round(ci_rcri_high_overall[2], 2), ")\n")
   cat("  p-value:", format.pval(p_rcri_high_overall, digits = 3), "\n")
-  cat("\nInterpretation: OR > 1 indicates higher mortality in RCRI ≥2 group\n\n")
+  cat("\nInterpretation: OR > 1 indicates higher mortality in RCRI >2 group\n\n")
 }
 
 # 2. Cardiac PMI Group
-cat("\n--- RCRI ≥2 vs In-Hospital Mortality (Cardiac PMI Group) ---\n\n")
+cat("\n--- RCRI >2 vs In-Hospital Mortality (Cardiac PMI Group) ---\n\n")
 
 rcri_high_mortality_cardiac <- cardiac_group %>%
-  mutate(RCRI_high = if_else(RCRI_score >= 2, "RCRI ≥2", "RCRI <2")) %>%
+  mutate(RCRI_high = if_else(RCRI_score > 2, "RCRI >2", "RCRI ≤2")) %>%
   group_by(RCRI_high) %>%
   summarise(
     N = n(),
@@ -1112,12 +1112,12 @@ rcri_high_mortality_cardiac <- cardiac_group %>%
     .groups = 'drop'
   )
 
-cat("Mortality by RCRI ≥2 (Cardiac PMI):\n")
+cat("Mortality by RCRI >2 (Cardiac PMI):\n")
 print(rcri_high_mortality_cardiac, n = Inf)
 
 # Chi-square test
 rcri_high_table_cardiac <- table(
-  cardiac_group %>% mutate(RCRI_high = if_else(RCRI_score >= 2, 1, 0)) %>% pull(RCRI_high),
+  cardiac_group %>% mutate(RCRI_high = if_else(RCRI_score > 2, 1, 0)) %>% pull(RCRI_high),
   cardiac_group$death_in_hospital
 )
 
@@ -1130,7 +1130,7 @@ if(nrow(rcri_high_table_cardiac) > 1 && ncol(rcri_high_table_cardiac) > 1) {
 
 # Logistic regression
 rcri_high_logistic_cardiac <- cardiac_group %>%
-  mutate(RCRI_high = if_else(RCRI_score >= 2, 1, 0)) %>%
+  mutate(RCRI_high = if_else(RCRI_score > 2, 1, 0)) %>%
   filter(!is.na(RCRI_high) & !is.na(death_in_hospital))
 
 if(nrow(rcri_high_logistic_cardiac) > 0) {
@@ -1142,18 +1142,18 @@ if(nrow(rcri_high_logistic_cardiac) > 0) {
   ci_rcri_high_cardiac <- exp(confint(model_rcri_high_cardiac)["RCRI_high",])
   p_rcri_high_cardiac <- summary(model_rcri_high_cardiac)$coefficients["RCRI_high", "Pr(>|z|)"]
 
-  cat("\nOdds Ratio (RCRI ≥2 vs RCRI <2) in Cardiac PMI:\n")
+  cat("\nOdds Ratio (RCRI >2 vs RCRI ≤2) in Cardiac PMI:\n")
   cat("  OR:", round(or_rcri_high_cardiac, 2),
       "(95% CI:", round(ci_rcri_high_cardiac[1], 2), "-", round(ci_rcri_high_cardiac[2], 2), ")\n")
   cat("  p-value:", format.pval(p_rcri_high_cardiac, digits = 3), "\n")
-  cat("\nInterpretation: OR > 1 indicates higher mortality in RCRI ≥2 group within Cardiac PMI\n\n")
+  cat("\nInterpretation: OR > 1 indicates higher mortality in RCRI >2 group within Cardiac PMI\n\n")
 }
 
 # 3. Noncardiac (Extra-cardiac) PMI Group
-cat("\n--- RCRI ≥2 vs In-Hospital Mortality (Noncardiac/Extra-cardiac PMI Group) ---\n\n")
+cat("\n--- RCRI >2 vs In-Hospital Mortality (Noncardiac/Extra-cardiac PMI Group) ---\n\n")
 
 rcri_high_mortality_noncardiac <- noncardiac_group %>%
-  mutate(RCRI_high = if_else(RCRI_score >= 2, "RCRI ≥2", "RCRI <2")) %>%
+  mutate(RCRI_high = if_else(RCRI_score > 2, "RCRI >2", "RCRI ≤2")) %>%
   group_by(RCRI_high) %>%
   summarise(
     N = n(),
@@ -1162,12 +1162,12 @@ rcri_high_mortality_noncardiac <- noncardiac_group %>%
     .groups = 'drop'
   )
 
-cat("Mortality by RCRI ≥2 (Noncardiac PMI):\n")
+cat("Mortality by RCRI >2 (Noncardiac PMI):\n")
 print(rcri_high_mortality_noncardiac, n = Inf)
 
 # Chi-square test
 rcri_high_table_noncardiac <- table(
-  noncardiac_group %>% mutate(RCRI_high = if_else(RCRI_score >= 2, 1, 0)) %>% pull(RCRI_high),
+  noncardiac_group %>% mutate(RCRI_high = if_else(RCRI_score > 2, 1, 0)) %>% pull(RCRI_high),
   noncardiac_group$death_in_hospital
 )
 
@@ -1180,7 +1180,7 @@ if(nrow(rcri_high_table_noncardiac) > 1 && ncol(rcri_high_table_noncardiac) > 1)
 
 # Logistic regression
 rcri_high_logistic_noncardiac <- noncardiac_group %>%
-  mutate(RCRI_high = if_else(RCRI_score >= 2, 1, 0)) %>%
+  mutate(RCRI_high = if_else(RCRI_score > 2, 1, 0)) %>%
   filter(!is.na(RCRI_high) & !is.na(death_in_hospital))
 
 if(nrow(rcri_high_logistic_noncardiac) > 0) {
@@ -1192,17 +1192,17 @@ if(nrow(rcri_high_logistic_noncardiac) > 0) {
   ci_rcri_high_noncardiac <- exp(confint(model_rcri_high_noncardiac)["RCRI_high",])
   p_rcri_high_noncardiac <- summary(model_rcri_high_noncardiac)$coefficients["RCRI_high", "Pr(>|z|)"]
 
-  cat("\nOdds Ratio (RCRI ≥2 vs RCRI <2) in Noncardiac PMI:\n")
+  cat("\nOdds Ratio (RCRI >2 vs RCRI ≤2) in Noncardiac PMI:\n")
   cat("  OR:", round(or_rcri_high_noncardiac, 2),
       "(95% CI:", round(ci_rcri_high_noncardiac[1], 2), "-", round(ci_rcri_high_noncardiac[2], 2), ")\n")
   cat("  p-value:", format.pval(p_rcri_high_noncardiac, digits = 3), "\n")
-  cat("\nInterpretation: OR > 1 indicates higher mortality in RCRI ≥2 group within Noncardiac PMI\n\n")
+  cat("\nInterpretation: OR > 1 indicates higher mortality in RCRI >2 group within Noncardiac PMI\n\n")
 }
 
 # Summary
-cat("\n--- Summary: RCRI ≥2 Effect on In-Hospital Mortality ---\n\n")
-cat("This analysis compares in-hospital mortality between patients with RCRI ≥2 vs RCRI <2.\n")
-cat("An OR > 1 with p < 0.05 indicates significantly higher mortality in the RCRI ≥2 group.\n\n")
+cat("\n--- Summary: RCRI >2 Effect on In-Hospital Mortality ---\n\n")
+cat("This analysis compares in-hospital mortality between patients with RCRI >2 vs RCRI ≤2.\n")
+cat("An OR > 1 with p < 0.05 indicates significantly higher mortality in the RCRI >2 group.\n\n")
 
 cat("\n--- In-Hospital Mortality: Cardiac vs Noncardiac (Agreed Cases) ---\n\n")
 agreed_mortality_pmi <- agreed_survival %>%
