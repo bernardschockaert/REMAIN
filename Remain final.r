@@ -1084,6 +1084,21 @@ rcri_high_logistic_overall <- obs12_with_pmi %>%
   filter(!is.na(RCRI_high) & !is.na(death_in_hospital))
 
 if(nrow(rcri_high_logistic_overall) > 0) {
+
+  # Show detailed cross-tabulation for verification
+  cat("\nDetailed cross-tabulation (RCRI >2 vs mortality):\n")
+  cat("RCRI ≤2 group:\n")
+  cat("  Deaths:", sum(rcri_high_logistic_overall$death_in_hospital[rcri_high_logistic_overall$RCRI_high == 0] == 1), "\n")
+  cat("  Alive:", sum(rcri_high_logistic_overall$death_in_hospital[rcri_high_logistic_overall$RCRI_high == 0] == 0), "\n")
+  cat("  Total:", sum(rcri_high_logistic_overall$RCRI_high == 0), "\n")
+  cat("  Mortality rate:", round(mean(rcri_high_logistic_overall$death_in_hospital[rcri_high_logistic_overall$RCRI_high == 0]) * 100, 1), "%\n\n")
+
+  cat("RCRI >2 group:\n")
+  cat("  Deaths:", sum(rcri_high_logistic_overall$death_in_hospital[rcri_high_logistic_overall$RCRI_high == 1] == 1), "\n")
+  cat("  Alive:", sum(rcri_high_logistic_overall$death_in_hospital[rcri_high_logistic_overall$RCRI_high == 1] == 0), "\n")
+  cat("  Total:", sum(rcri_high_logistic_overall$RCRI_high == 1), "\n")
+  cat("  Mortality rate:", round(mean(rcri_high_logistic_overall$death_in_hospital[rcri_high_logistic_overall$RCRI_high == 1]) * 100, 1), "%\n\n")
+
   model_rcri_high_overall <- glm(death_in_hospital ~ RCRI_high,
                                   data = rcri_high_logistic_overall,
                                   family = binomial(link = "logit"))
@@ -1096,7 +1111,8 @@ if(nrow(rcri_high_logistic_overall) > 0) {
   cat("  OR:", round(or_rcri_high_overall, 2),
       "(95% CI:", round(ci_rcri_high_overall[1], 2), "-", round(ci_rcri_high_overall[2], 2), ")\n")
   cat("  p-value:", format.pval(p_rcri_high_overall, digits = 3), "\n")
-  cat("\nInterpretation: OR > 1 indicates higher mortality in RCRI >2 group\n\n")
+  cat("\nInterpretation: OR > 1 indicates higher mortality in RCRI >2 group\n")
+  cat("                OR < 1 would indicate LOWER mortality in RCRI >2 group (counterintuitive!)\n\n")
 }
 
 # 2. Cardiac PMI Group
