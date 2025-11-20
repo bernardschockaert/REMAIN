@@ -1320,7 +1320,7 @@ pmi_causes_chart_data <- obs12_with_pmi %>%
       PMI_category == "stroke" ~ "Stroke",
       PMI_category == "sepsis" ~ "Sepsis",
       PMI_category == "tachy" ~ "Tachyarrhythmia",
-      PMI_category == "ex_car_other" ~ "other",
+      PMI_category == "ex_car_other" ~ "Other",
       is.na(PMI_category) ~ "NA",
       TRUE ~ as.character(PMI_category)
     )
