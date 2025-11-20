@@ -647,10 +647,10 @@ cat_vars_baseline <- c("gender_display", "emergency_surg", "surg_specialty",
                        "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
                        "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease")
 
-# Table 1: All included patients
-cat("\n=== TABLE 1: ALL INCLUDED PATIENTS (BASELINE CHARACTERISTICS) ===\n")
+# Table 1: OBS12 with PMI (baseline characteristics)
+cat("\n=== TABLE 1: OBS12 WITH PMI (BASELINE CHARACTERISTICS) ===\n")
 table1_all <- CreateTableOne(vars = vars_baseline,
-                              data = all_patients,
+                              data = obs12_with_pmi,
                               factorVars = cat_vars_baseline,
                               test = FALSE)
 print(table1_all, nonnormal = nonnormal_vars, showAllLevels = TRUE, formatOptions = list(big.mark = ","))
@@ -1340,7 +1340,7 @@ pmi_causes_plot <- ggplot(pmi_causes_chart_data, aes(x = reorder(PMI_category_di
   scale_fill_manual(values = c("Cardiac" = "#FFB6C1", "Noncardiac" = "#ADD8E6")) +  # Light red and light blue
   coord_flip() +
   labs(
-    title = "PMI Causes Distribution (OBS12)",
+    title = "PMI aetiology",
     subtitle = "Percentage of Total Cases",
     x = "PMI Category",
     y = "Percentage (%)",
