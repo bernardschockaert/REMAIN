@@ -157,25 +157,38 @@ cat("\n=== INTER-RATER AGREEMENT: COHEN'S KAPPA ===\n")
 cat("\nTotal patients with both OBS12 and OBS34 assessments:", nrow(comparison_pmi), "\n")
 cat("Patients with NA in OBS12:", sum(is.na(comparison_pmi$PMI_type_12)), "\n")
 cat("Patients with NA in OBS34:", sum(is.na(comparison_pmi$PMI_type_34)), "\n")
-cat("Patients with NA in either OBS12 or OBS34:", 
-    sum(is.na(comparison_pmi$PMI_type_12) | is.na(comparison_pmi$PMI_type_34)), "\n")
+cat("Patients with NA in BOTH OBS12 and OBS34 (excluded):",
+    sum(is.na(comparison_pmi$PMI_type_12) & is.na(comparison_pmi$PMI_type_34)), "\n")
+cat("Patients with NA in only one observer (counted as disagreement):",
+    sum((is.na(comparison_pmi$PMI_type_12) & !is.na(comparison_pmi$PMI_type_34)) |
+        (!is.na(comparison_pmi$PMI_type_12) & is.na(comparison_pmi$PMI_type_34))), "\n")
 
+# Only exclude patients where BOTH observers have NA
+# Patients with NA in one observer but not the other are counted as disagreement
 kappa_data <- comparison_pmi %>%
-  filter(!is.na(PMI_type_12) & !is.na(PMI_type_34)) %>%
+  filter(!(is.na(PMI_type_12) & is.na(PMI_type_34))) %>%
+  mutate(
+    # Replace NA with "NA" string so it counts as a category
+    PMI_type_12 = if_else(is.na(PMI_type_12), "NA", PMI_type_12),
+    PMI_type_34 = if_else(is.na(PMI_type_34), "NA", PMI_type_34)
+  ) %>%
   select(PMI_type_12, PMI_type_34)
 
-cat("Patients included in kappa analysis (both non-NA):", nrow(kappa_data), "\n")
+cat("Patients included in kappa analysis (excluding only those with both NA):", nrow(kappa_data), "\n")
 
 kappa_result <- kappa2(kappa_data, weight = "unweighted")
 
 n <- nrow(kappa_data)
 po <- sum(kappa_data$PMI_type_12 == kappa_data$PMI_type_34) / n
-pe <- (sum(kappa_data$PMI_type_12 == "Cardiac") * sum(kappa_data$PMI_type_34 == "Cardiac") + 
-       sum(kappa_data$PMI_type_12 == "Noncardiac") * sum(kappa_data$PMI_type_34 == "Noncardiac")) / n^2
+# Calculate pe for all categories (Cardiac, Noncardiac, NA)
+pe <- 0
+for(cat in unique(c(kappa_data$PMI_type_12, kappa_data$PMI_type_34))) {
+  pe <- pe + (sum(kappa_data$PMI_type_12 == cat) * sum(kappa_data$PMI_type_34 == cat)) / n^2
+}
 kappa <- (po - pe) / (1 - pe)
 se_kappa <- sqrt(po * (1 - po) / (n * (1 - pe)^2))
 
-cat("\nCohen's Kappa for PMI Classification (Cardiac vs Noncardiac):\n")
+cat("\nCohen's Kappa for PMI Classification (Cardiac vs Noncardiac, NA as disagreement):\n")
 cat("Kappa:", round(kappa_result$value, 3), "\n")
 cat("95% CI: [", round(kappa - 1.96*se_kappa, 3), ", ", round(kappa + 1.96*se_kappa, 3), "]\n", sep="")
 cat("p-value:", format.pval(kappa_result$p.value, digits = 3), "\n")
