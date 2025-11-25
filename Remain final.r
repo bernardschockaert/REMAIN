@@ -236,11 +236,25 @@ hemodynamics <- postoperativevitals %>%
   filter(!is.na(valueQuantity_value) & valueQuantity_value != "" & valueQuantity_value != "NULL") %>%
   mutate(valueQuantity_value = as.numeric(valueQuantity_value))
 
-# Extract vital signs
-bp_data <- hemodynamics %>%
-  filter(code_display_original %in% c("ABP", "NIBP")) %>%
+# Extract vital signs - Prioritize ABP over NIBP
+abp_data <- hemodynamics %>%
+  filter(code_display_original == "ABP") %>%
   group_by(pseudonym_value, effectiveDateTime) %>%
-  summarise(MAP = mean(valueQuantity_value, na.rm = TRUE), .groups = "drop")
+  summarise(MAP = mean(valueQuantity_value, na.rm = TRUE), source = "ABP", .groups = "drop")
+
+nibp_data <- hemodynamics %>%
+  filter(code_display_original == "NIBP") %>%
+  group_by(pseudonym_value, effectiveDateTime) %>%
+  summarise(MAP = mean(valueQuantity_value, na.rm = TRUE), source = "NIBP", .groups = "drop")
+
+# Combine: use ABP when available, NIBP only when ABP missing
+bp_data <- abp_data %>%
+  bind_rows(nibp_data) %>%
+  group_by(pseudonym_value, effectiveDateTime) %>%
+  arrange(desc(source)) %>%  # ABP comes before NIBP alphabetically
+  slice(1) %>%  # Take first (ABP if present, else NIBP)
+  ungroup() %>%
+  select(pseudonym_value, effectiveDateTime, MAP)
 
 hr_data <- hemodynamics %>%
   filter(code_display_original == "HR") %>%
