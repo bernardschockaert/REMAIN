@@ -1689,6 +1689,63 @@ ci_twa <- exp(confint(mort_twa)[2,])
 cat("OR per unit TWA: ", round(or_twa, 3), " (95%CI: ", round(ci_twa[1], 3), "-",
     round(ci_twa[2], 3), "), p=", format.pval(summary(mort_twa)$coefficients[2,4], digits=3), "\n", sep="")
 
+# SUMMARY TABLE - TOTAL COHORT
+cat("\n\n=== SUMMARY TABLE: TOTAL COHORT ===\n\n")
+cat("Postoperative Vital Sign Thresholds and In-Hospital Mortality\n\n")
+cat(sprintf("%-20s | %-15s | %-15s | %-12s | %-20s | %-10s\n",
+            "Threshold", "With Violation", "No Violation", "p-value", "Odds Ratio (95%CI)", ""))
+cat(sprintf("%s\n", paste(rep("-", 100), collapse="")))
+
+# MAP < 65
+map_data <- obs12_with_pmi[!is.na(obs12_with_pmi$any_MAP_below_65) & !is.na(obs12_with_pmi$death_in_hospital), ]
+map_with <- sum(map_data$any_MAP_below_65 == TRUE & map_data$death_in_hospital == 1) / sum(map_data$any_MAP_below_65 == TRUE) * 100
+map_without <- sum(map_data$any_MAP_below_65 == FALSE & map_data$death_in_hospital == 1) / sum(map_data$any_MAP_below_65 == FALSE) * 100
+map_test <- if(min(table(map_data$any_MAP_below_65, map_data$death_in_hospital)) >= 5) chisq.test(table(map_data$any_MAP_below_65, map_data$death_in_hospital))$p.value else fisher.test(table(map_data$any_MAP_below_65, map_data$death_in_hospital))$p.value
+map_model <- glm(death_in_hospital ~ any_MAP_below_65, data = map_data, family = binomial)
+map_or <- exp(coef(map_model)[2])
+map_ci <- exp(confint(map_model)[2,])
+
+cat(sprintf("%-20s | %6.1f%% (n=%3d) | %6.1f%% (n=%3d) | %-12s | %4.2f (%4.2f-%4.2f)\n",
+            "MAP < 65 mmHg",
+            map_with, sum(map_data$any_MAP_below_65 == TRUE),
+            map_without, sum(map_data$any_MAP_below_65 == FALSE),
+            format.pval(map_test, digits=3),
+            map_or, map_ci[1], map_ci[2]))
+
+# HR > 120
+hr_data <- obs12_with_pmi[!is.na(obs12_with_pmi$any_HR_above_120) & !is.na(obs12_with_pmi$death_in_hospital), ]
+hr_with <- sum(hr_data$any_HR_above_120 == TRUE & hr_data$death_in_hospital == 1) / sum(hr_data$any_HR_above_120 == TRUE) * 100
+hr_without <- sum(hr_data$any_HR_above_120 == FALSE & hr_data$death_in_hospital == 1) / sum(hr_data$any_HR_above_120 == FALSE) * 100
+hr_test <- if(min(table(hr_data$any_HR_above_120, hr_data$death_in_hospital)) >= 5) chisq.test(table(hr_data$any_HR_above_120, hr_data$death_in_hospital))$p.value else fisher.test(table(hr_data$any_HR_above_120, hr_data$death_in_hospital))$p.value
+hr_model <- glm(death_in_hospital ~ any_HR_above_120, data = hr_data, family = binomial)
+hr_or <- exp(coef(hr_model)[2])
+hr_ci <- exp(confint(hr_model)[2,])
+
+cat(sprintf("%-20s | %6.1f%% (n=%3d) | %6.1f%% (n=%3d) | %-12s | %4.2f (%4.2f-%4.2f)\n",
+            "HR > 120 bpm",
+            hr_with, sum(hr_data$any_HR_above_120 == TRUE),
+            hr_without, sum(hr_data$any_HR_above_120 == FALSE),
+            format.pval(hr_test, digits=3),
+            hr_or, hr_ci[1], hr_ci[2]))
+
+# SpO2 < 90
+spo2_data <- obs12_with_pmi[!is.na(obs12_with_pmi$any_SpO2_below_90) & !is.na(obs12_with_pmi$death_in_hospital), ]
+spo2_with <- sum(spo2_data$any_SpO2_below_90 == TRUE & spo2_data$death_in_hospital == 1) / sum(spo2_data$any_SpO2_below_90 == TRUE) * 100
+spo2_without <- sum(spo2_data$any_SpO2_below_90 == FALSE & spo2_data$death_in_hospital == 1) / sum(spo2_data$any_SpO2_below_90 == FALSE) * 100
+spo2_test <- if(min(table(spo2_data$any_SpO2_below_90, spo2_data$death_in_hospital)) >= 5) chisq.test(table(spo2_data$any_SpO2_below_90, spo2_data$death_in_hospital))$p.value else fisher.test(table(spo2_data$any_SpO2_below_90, spo2_data$death_in_hospital))$p.value
+spo2_model <- glm(death_in_hospital ~ any_SpO2_below_90, data = spo2_data, family = binomial)
+spo2_or <- exp(coef(spo2_model)[2])
+spo2_ci <- exp(confint(spo2_model)[2,])
+
+cat(sprintf("%-20s | %6.1f%% (n=%3d) | %6.1f%% (n=%3d) | %-12s | %4.2f (%4.2f-%4.2f)\n",
+            "SpO2 < 90%",
+            spo2_with, sum(spo2_data$any_SpO2_below_90 == TRUE),
+            spo2_without, sum(spo2_data$any_SpO2_below_90 == FALSE),
+            format.pval(spo2_test, digits=3),
+            spo2_or, spo2_ci[1], spo2_ci[2]))
+
+cat(sprintf("%s\n\n", paste(rep("-", 100), collapse="")))
+
 # CARDIAC PMI
 cat("\n\n=== CARDIAC PMI SUBGROUP ===\n")
 cardiac_data <- obs12_with_pmi %>% filter(PMI_type == "Cardiac")
@@ -1703,6 +1760,69 @@ cardiac_twa <- cardiac_data %>% filter(!is.na(TWA_hypotension)) %>%
 cat("\n--- Cardiac PMI: TWA ---\n")
 cat("TWA: ", round(cardiac_twa$mean, 1), " ± ", round(cardiac_twa$sd, 1),
     " mmHg (n=", cardiac_twa$n, ")\n", sep="")
+
+# SUMMARY TABLE - CARDIAC PMI
+cat("\n\n=== SUMMARY TABLE: CARDIAC PMI ===\n\n")
+cat("Postoperative Vital Sign Thresholds and In-Hospital Mortality (Cardiac PMI Only)\n\n")
+cat(sprintf("%-20s | %-15s | %-15s | %-12s | %-20s\n",
+            "Threshold", "With Violation", "No Violation", "p-value", "Odds Ratio (95%CI)"))
+cat(sprintf("%s\n", paste(rep("-", 95), collapse="")))
+
+# MAP < 65 - Cardiac
+card_map_data <- cardiac_data[!is.na(cardiac_data$any_MAP_below_65) & !is.na(cardiac_data$death_in_hospital), ]
+if(nrow(card_map_data) > 0 && sum(card_map_data$any_MAP_below_65) > 0 && sum(!card_map_data$any_MAP_below_65) > 0) {
+  card_map_with <- sum(card_map_data$any_MAP_below_65 == TRUE & card_map_data$death_in_hospital == 1) / sum(card_map_data$any_MAP_below_65 == TRUE) * 100
+  card_map_without <- sum(card_map_data$any_MAP_below_65 == FALSE & card_map_data$death_in_hospital == 1) / sum(card_map_data$any_MAP_below_65 == FALSE) * 100
+  card_map_test <- if(min(table(card_map_data$any_MAP_below_65, card_map_data$death_in_hospital)) >= 5) chisq.test(table(card_map_data$any_MAP_below_65, card_map_data$death_in_hospital))$p.value else fisher.test(table(card_map_data$any_MAP_below_65, card_map_data$death_in_hospital))$p.value
+  card_map_model <- glm(death_in_hospital ~ any_MAP_below_65, data = card_map_data, family = binomial)
+  card_map_or <- exp(coef(card_map_model)[2])
+  card_map_ci <- exp(confint(card_map_model)[2,])
+
+  cat(sprintf("%-20s | %6.1f%% (n=%3d) | %6.1f%% (n=%3d) | %-12s | %4.2f (%4.2f-%4.2f)\n",
+              "MAP < 65 mmHg",
+              card_map_with, sum(card_map_data$any_MAP_below_65 == TRUE),
+              card_map_without, sum(card_map_data$any_MAP_below_65 == FALSE),
+              format.pval(card_map_test, digits=3),
+              card_map_or, card_map_ci[1], card_map_ci[2]))
+}
+
+# HR > 120 - Cardiac
+card_hr_data <- cardiac_data[!is.na(cardiac_data$any_HR_above_120) & !is.na(cardiac_data$death_in_hospital), ]
+if(nrow(card_hr_data) > 0 && sum(card_hr_data$any_HR_above_120) > 0 && sum(!card_hr_data$any_HR_above_120) > 0) {
+  card_hr_with <- sum(card_hr_data$any_HR_above_120 == TRUE & card_hr_data$death_in_hospital == 1) / sum(card_hr_data$any_HR_above_120 == TRUE) * 100
+  card_hr_without <- sum(card_hr_data$any_HR_above_120 == FALSE & card_hr_data$death_in_hospital == 1) / sum(card_hr_data$any_HR_above_120 == FALSE) * 100
+  card_hr_test <- if(min(table(card_hr_data$any_HR_above_120, card_hr_data$death_in_hospital)) >= 5) chisq.test(table(card_hr_data$any_HR_above_120, card_hr_data$death_in_hospital))$p.value else fisher.test(table(card_hr_data$any_HR_above_120, card_hr_data$death_in_hospital))$p.value
+  card_hr_model <- glm(death_in_hospital ~ any_HR_above_120, data = card_hr_data, family = binomial)
+  card_hr_or <- exp(coef(card_hr_model)[2])
+  card_hr_ci <- exp(confint(card_hr_model)[2,])
+
+  cat(sprintf("%-20s | %6.1f%% (n=%3d) | %6.1f%% (n=%3d) | %-12s | %4.2f (%4.2f-%4.2f)\n",
+              "HR > 120 bpm",
+              card_hr_with, sum(card_hr_data$any_HR_above_120 == TRUE),
+              card_hr_without, sum(card_hr_data$any_HR_above_120 == FALSE),
+              format.pval(card_hr_test, digits=3),
+              card_hr_or, card_hr_ci[1], card_hr_ci[2]))
+}
+
+# SpO2 < 90 - Cardiac
+card_spo2_data <- cardiac_data[!is.na(cardiac_data$any_SpO2_below_90) & !is.na(cardiac_data$death_in_hospital), ]
+if(nrow(card_spo2_data) > 0 && sum(card_spo2_data$any_SpO2_below_90) > 0 && sum(!card_spo2_data$any_SpO2_below_90) > 0) {
+  card_spo2_with <- sum(card_spo2_data$any_SpO2_below_90 == TRUE & card_spo2_data$death_in_hospital == 1) / sum(card_spo2_data$any_SpO2_below_90 == TRUE) * 100
+  card_spo2_without <- sum(card_spo2_data$any_SpO2_below_90 == FALSE & card_spo2_data$death_in_hospital == 1) / sum(card_spo2_data$any_SpO2_below_90 == FALSE) * 100
+  card_spo2_test <- if(min(table(card_spo2_data$any_SpO2_below_90, card_spo2_data$death_in_hospital)) >= 5) chisq.test(table(card_spo2_data$any_SpO2_below_90, card_spo2_data$death_in_hospital))$p.value else fisher.test(table(card_spo2_data$any_SpO2_below_90, card_spo2_data$death_in_hospital))$p.value
+  card_spo2_model <- glm(death_in_hospital ~ any_SpO2_below_90, data = card_spo2_data, family = binomial)
+  card_spo2_or <- exp(coef(card_spo2_model)[2])
+  card_spo2_ci <- exp(confint(card_spo2_model)[2,])
+
+  cat(sprintf("%-20s | %6.1f%% (n=%3d) | %6.1f%% (n=%3d) | %-12s | %4.2f (%4.2f-%4.2f)\n",
+              "SpO2 < 90%",
+              card_spo2_with, sum(card_spo2_data$any_SpO2_below_90 == TRUE),
+              card_spo2_without, sum(card_spo2_data$any_SpO2_below_90 == FALSE),
+              format.pval(card_spo2_test, digits=3),
+              card_spo2_or, card_spo2_ci[1], card_spo2_ci[2]))
+}
+
+cat(sprintf("%s\n\n", paste(rep("-", 95), collapse="")))
 
 # NONCARDIAC PMI
 cat("\n\n=== NONCARDIAC (EXTRA-CARDIAC) PMI SUBGROUP ===\n")
