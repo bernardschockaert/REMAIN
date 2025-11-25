@@ -34,6 +34,7 @@ coupling <- read_excel("Z:/REMAIN/Mario Stark/Files gebruikt tijdens stage/Casto
 demographics <- read_csv("Z:/REMAIN/Data export Datacapture/REMAIN - 2024-06-20 - demografie.csv")
 medication <- read.csv("Z:/REMAIN/Data export Datacapture/REMAIN - 2024-06-20 - medicatie_voorschrift.csv")
 admission <- read.csv("Z:/REMAIN/Data export Datacapture/REMAIN - 2024-06-20 - opname.csv")
+postoperativevitals <- read.csv("Z:/REMAIN/Data export Datacapture/REMAIN - metingen_postoperatief_20241010.csv")
 
 #Exclude LOTx, centrale lijn, minor eg gastroscopy, tropo incorrect, recent cardiac surgery/intervention, organ donation and old/insufficient file
 exclude_ids <- c(110014,110015,110083,110096,110279,110287,110300,110306,110308,110368,110376,110416,110470,110719,110930,110941,110951,110981,111009,110100,110148,110159,110289,110318,110347,110349,110352,110379,110567,110609,110694,110752,110908,111049,110162,110166,110210,110248,110398,110445,110487,110577,110614,110627,110635,110707,110743,110827,110864,110873,110891,110914,110995,110028,110033,110051,110067,110068,110099,110114,110117,110126,110131,110143,110160,110183,110187,110198,110205,110214,110221,110222,110225,110230,110238,110251,110261,110270,110330,110343,110357,110378,110382,110399,110408,110418,110431,110432,110443,110451,110455,110456,110458,110476,110491,110515,110521,110544,110550,110553,110573,110586,110588,110608,110644,110669,110686,110722,110726,110747,110753,110765,110774,110776,110783,110789,110841,110876,110878,110879,110884,110899,110911,110920,110922,110931,110933,110943,110948,110953,110970,110973,110983,110985,110987,110993,110998,111001,111005,111011,111012,111014,111026,111030,111032,111034,111038,111053,111055,111056,111064,111070,111075,111076,111082,111087,111097
@@ -227,6 +228,48 @@ agreed_survival <- obs12 %>%
   inner_join(agreed_patients, by = "Participant Id") %>%
   filter(!is.na(PMI_type)) %>%
   distinct(Pseudonym, .keep_all = TRUE)
+
+# ========== POSTOPERATIVE VITALS PROCESSING ==========
+
+# Process hemodynamics and create patient-level summary
+hemodynamics <- postoperativevitals %>%
+  filter(!is.na(valueQuantity_value) & valueQuantity_value != "" & valueQuantity_value != "NULL") %>%
+  mutate(valueQuantity_value = as.numeric(valueQuantity_value))
+
+# Extract vital signs
+bp_data <- hemodynamics %>%
+  filter(code_display_original %in% c("ABP", "NIBP")) %>%
+  group_by(pseudonym_value, effectiveDateTime) %>%
+  summarise(MAP = mean(valueQuantity_value, na.rm = TRUE), .groups = "drop")
+
+hr_data <- hemodynamics %>%
+  filter(code_display_original == "HR") %>%
+  select(pseudonym_value, effectiveDateTime, HR = valueQuantity_value)
+
+spo2_data <- hemodynamics %>%
+  filter(code_display_original == "SpO2") %>%
+  select(pseudonym_value, effectiveDateTime, SpO2 = valueQuantity_value)
+
+vital_signs <- bp_data %>%
+  full_join(hr_data, by = c("pseudonym_value", "effectiveDateTime")) %>%
+  full_join(spo2_data, by = c("pseudonym_value", "effectiveDateTime"))
+
+# Patient-level summary (MAP<65, HR>120, SpO2<90)
+patient_hemodynamics <- vital_signs %>%
+  group_by(pseudonym_value) %>%
+  summarise(
+    any_MAP_below_65 = any(MAP < 65, na.rm = TRUE),
+    any_HR_above_120 = any(HR > 120, na.rm = TRUE),
+    any_SpO2_below_90 = any(SpO2 < 90, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Merge with main datasets
+obs12_with_pmi <- obs12_with_pmi %>%
+  left_join(patient_hemodynamics, by = c("Pseudonym" = "pseudonym_value"))
+
+agreed_survival <- agreed_survival %>%
+  left_join(patient_hemodynamics, by = c("Pseudonym" = "pseudonym_value"))
 
 # ========== MEDICATION ANALYSIS ==========
 
@@ -1531,6 +1574,41 @@ cat("                OR < 1 indicates lower mortality in Disagreed cases\n\n")
 cat("Number of agreed cases:", nrow(agreed_mortality_data), "\n")
 cat("Number of disagreed cases:", nrow(disagreed_mortality_data), "\n")
 
+# ========== POSTOPERATIVE VITALS ANALYSIS ==========
+
+cat("\n\n=== POSTOPERATIVE VITALS: ASSOCIATION WITH IN-HOSPITAL MORTALITY ===\n\n")
+
+# Association with in-hospital mortality
+mort_map <- glm(in_hospital_mortality ~ any_MAP_below_65, data = obs12_with_pmi, family = binomial)
+mort_hr <- glm(in_hospital_mortality ~ any_HR_above_120, data = obs12_with_pmi, family = binomial)
+mort_spo2 <- glm(in_hospital_mortality ~ any_SpO2_below_90, data = obs12_with_pmi, family = binomial)
+
+cat("MAP<65 → Mortality: OR=", round(exp(coef(mort_map)[2]), 2),
+    " (95%CI:", round(exp(confint(mort_map)[2,1]), 2), "-", round(exp(confint(mort_map)[2,2]), 2), ")",
+    " p=", format.pval(summary(mort_map)$coefficients[2,4], digits=3), "\n")
+cat("HR>120 → Mortality: OR=", round(exp(coef(mort_hr)[2]), 2),
+    " (95%CI:", round(exp(confint(mort_hr)[2,1]), 2), "-", round(exp(confint(mort_hr)[2,2]), 2), ")",
+    " p=", format.pval(summary(mort_hr)$coefficients[2,4], digits=3), "\n")
+cat("SpO2<90 → Mortality: OR=", round(exp(coef(mort_spo2)[2]), 2),
+    " (95%CI:", round(exp(confint(mort_spo2)[2,1]), 2), "-", round(exp(confint(mort_spo2)[2,2]), 2), ")",
+    " p=", format.pval(summary(mort_spo2)$coefficients[2,4], digits=3), "\n\n")
+
+cat("=== POSTOPERATIVE VITALS: ASSOCIATION WITH PMI TYPE ===\n\n")
+
+# Association with PMI type (Noncardiac vs Cardiac)
+obs12_pmi_binary <- obs12_with_pmi %>% mutate(PMI_noncardiac = if_else(PMI_type == "Noncardiac", 1, 0))
+
+pmi_map <- glm(PMI_noncardiac ~ any_MAP_below_65, data = obs12_pmi_binary, family = binomial)
+pmi_hr <- glm(PMI_noncardiac ~ any_HR_above_120, data = obs12_pmi_binary, family = binomial)
+pmi_spo2 <- glm(PMI_noncardiac ~ any_SpO2_below_90, data = obs12_pmi_binary, family = binomial)
+
+cat("MAP<65 → Noncardiac: OR=", round(exp(coef(pmi_map)[2]), 2),
+    " p=", format.pval(summary(pmi_map)$coefficients[2,4], digits=3), "\n")
+cat("HR>120 → Noncardiac: OR=", round(exp(coef(pmi_hr)[2]), 2),
+    " p=", format.pval(summary(pmi_hr)$coefficients[2,4], digits=3), "\n")
+cat("SpO2<90 → Noncardiac: OR=", round(exp(coef(pmi_spo2)[2]), 2),
+    " p=", format.pval(summary(pmi_spo2)$coefficients[2,4], digits=3), "\n\n")
+
 cat("\n\n=== ANALYSIS COMPLETE ===\n")
 cat("\n✓ Inter-rater agreement (Cohen's Kappa)\n")
 cat("✓ PMI category breakdown (OBS12 vs Agreed)\n")
@@ -1544,6 +1622,9 @@ cat("  - Logistic regression with unadjusted and adjusted OR (age + emergency su
 cat("  - All PMI categories mortality breakdown\n")
 cat("  - T2MI with vs without precipitant (OBS12 & Agreed) with Fisher's exact test\n")
 cat("  - Agreed vs Disagreed cases mortality comparison\n")
+cat("✓ Postoperative vitals analysis (MAP<65, HR>120, SpO2<90):\n")
+cat("  - Association with in-hospital mortality\n")
+cat("  - Association with PMI type (Cardiac vs Noncardiac)\n")
 cat("\nKey points:\n")
 cat("  • Baseline tables: Chi-square test for group comparisons\n")
 cat("  • Mortality analysis:\n")
