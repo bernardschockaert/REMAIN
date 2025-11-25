@@ -1597,7 +1597,8 @@ cat("\n\n=== POSTOPERATIVE VITALS: COMPREHENSIVE ANALYSIS ===\n\n")
 create_vitals_mortality_table <- function(data, threshold_var, threshold_name, cohort_name) {
   cat("\n--- ", cohort_name, ": ", threshold_name, " ---\n\n", sep="")
 
-  data_clean <- data %>% filter(!is.na(!!sym(threshold_var)) & !is.na(death_in_hospital))
+  # Use base R filtering instead of tidy evaluation
+  data_clean <- data[!is.na(data[[threshold_var]]) & !is.na(data$death_in_hospital), ]
 
   if(nrow(data_clean) == 0) {
     cat("No data available\n")
@@ -1632,7 +1633,9 @@ create_vitals_mortality_table <- function(data, threshold_var, threshold_name, c
   cat("  Deaths: ", mort_above, " (", round(pct_mort_above, 1), "% ± ", round(se_above, 1), " SE)\n\n", sep="")
   cat(test_name, " test: p=", format.pval(p_value, digits=3), "\n", sep="")
 
-  model <- glm(death_in_hospital ~ !!sym(threshold_var), data = data_clean, family = binomial)
+  # Build formula using as.formula for base R compatibility
+  formula_str <- paste("death_in_hospital ~", threshold_var)
+  model <- glm(as.formula(formula_str), data = data_clean, family = binomial)
   or <- exp(coef(model)[2])
   ci <- exp(confint(model)[2,])
   p_glm <- summary(model)$coefficients[2,4]
