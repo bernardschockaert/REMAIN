@@ -1591,26 +1591,130 @@ cat("Number of disagreed cases:", nrow(disagreed_mortality_data), "\n")
 
 # ========== POSTOPERATIVE VITALS ANALYSIS ==========
 
-cat("\n\n=== POSTOPERATIVE VITALS: ASSOCIATION WITH IN-HOSPITAL MORTALITY ===\n\n")
+cat("\n\n=== POSTOPERATIVE VITALS: COMPREHENSIVE ANALYSIS ===\n\n")
 
-# Association with in-hospital mortality
-mort_map <- glm(death_in_hospital ~ any_MAP_below_65, data = obs12_with_pmi, family = binomial)
-mort_hr <- glm(death_in_hospital ~ any_HR_above_120, data = obs12_with_pmi, family = binomial)
-mort_spo2 <- glm(death_in_hospital ~ any_SpO2_below_90, data = obs12_with_pmi, family = binomial)
-mort_twa <- glm(death_in_hospital ~ TWA_hypotension, data = obs12_with_pmi, family = binomial)
+# Helper function for contingency table with statistics
+create_vitals_mortality_table <- function(data, threshold_var, threshold_name, cohort_name) {
+  cat("\n--- ", cohort_name, ": ", threshold_name, " ---\n\n", sep="")
 
-cat("MAP<65 (any episode) → Mortality: OR=", round(exp(coef(mort_map)[2]), 2),
-    " (95%CI:", round(exp(confint(mort_map)[2,1]), 2), "-", round(exp(confint(mort_map)[2,2]), 2), ")",
-    " p=", format.pval(summary(mort_map)$coefficients[2,4], digits=3), "\n")
-cat("HR>120 (any episode) → Mortality: OR=", round(exp(coef(mort_hr)[2]), 2),
-    " (95%CI:", round(exp(confint(mort_hr)[2,1]), 2), "-", round(exp(confint(mort_hr)[2,2]), 2), ")",
-    " p=", format.pval(summary(mort_hr)$coefficients[2,4], digits=3), "\n")
-cat("SpO2<90 (any episode) → Mortality: OR=", round(exp(coef(mort_spo2)[2]), 2),
-    " (95%CI:", round(exp(confint(mort_spo2)[2,1]), 2), "-", round(exp(confint(mort_spo2)[2,2]), 2), ")",
-    " p=", format.pval(summary(mort_spo2)$coefficients[2,4], digits=3), "\n")
-cat("TWA Hypotension (continuous) → Mortality: OR=", round(exp(coef(mort_twa)[2]), 2),
-    " (95%CI:", round(exp(confint(mort_twa)[2,1]), 2), "-", round(exp(confint(mort_twa)[2,2]), 2), ")",
-    " p=", format.pval(summary(mort_twa)$coefficients[2,4], digits=3), "\n\n")
+  data_clean <- data %>% filter(!is.na(!!sym(threshold_var)) & !is.na(death_in_hospital))
+
+  if(nrow(data_clean) == 0) {
+    cat("No data available\n")
+    return(NULL)
+  }
+
+  ct <- table(data_clean[[threshold_var]], data_clean$death_in_hospital)
+
+  below <- sum(data_clean[[threshold_var]] == TRUE, na.rm = TRUE)
+  above <- sum(data_clean[[threshold_var]] == FALSE, na.rm = TRUE)
+  mort_below <- sum(data_clean[[threshold_var]] == TRUE & data_clean$death_in_hospital == 1, na.rm = TRUE)
+  mort_above <- sum(data_clean[[threshold_var]] == FALSE & data_clean$death_in_hospital == 1, na.rm = TRUE)
+
+  pct_mort_below <- if(below > 0) mort_below / below * 100 else NA
+  pct_mort_above <- if(above > 0) mort_above / above * 100 else NA
+  se_below <- if(below > 0) sqrt(pct_mort_below * (100 - pct_mort_below) / below) else NA
+  se_above <- if(above > 0) sqrt(pct_mort_above * (100 - pct_mort_above) / above) else NA
+
+  if(min(ct) >= 5) {
+    test <- chisq.test(ct)
+    test_name <- "Chi-square"
+    p_value <- test$p.value
+  } else {
+    test <- fisher.test(ct)
+    test_name <- "Fisher's exact"
+    p_value <- test$p.value
+  }
+
+  cat("Threshold violation present (n=", below, "):\n", sep="")
+  cat("  Deaths: ", mort_below, " (", round(pct_mort_below, 1), "% ± ", round(se_below, 1), " SE)\n", sep="")
+  cat("No threshold violation (n=", above, "):\n", sep="")
+  cat("  Deaths: ", mort_above, " (", round(pct_mort_above, 1), "% ± ", round(se_above, 1), " SE)\n\n", sep="")
+  cat(test_name, " test: p=", format.pval(p_value, digits=3), "\n", sep="")
+
+  model <- glm(death_in_hospital ~ !!sym(threshold_var), data = data_clean, family = binomial)
+  or <- exp(coef(model)[2])
+  ci <- exp(confint(model)[2,])
+  p_glm <- summary(model)$coefficients[2,4]
+  cat("Odds Ratio: ", round(or, 2), " (95%CI: ", round(ci[1], 2), "-", round(ci[2], 2),
+      "), p=", format.pval(p_glm, digits=3), "\n", sep="")
+}
+
+# TWA Hypotension info
+cat("=== TIME-WEIGHTED AVERAGE (TWA) HYPOTENSION ===\n\n")
+cat("TWA represents cumulative hypotensive burden:\n")
+cat("  - Formula: sum of (65 - MAP) for all MAP < 65 mmHg\n")
+cat("  - Higher values = more severe/prolonged hypotension\n")
+cat("  - Units: mmHg × measurements\n\n")
+
+twa_summary <- obs12_with_pmi %>% filter(!is.na(TWA_hypotension)) %>%
+  summarise(n = n(), mean = mean(TWA_hypotension), sd = sd(TWA_hypotension),
+            median = median(TWA_hypotension), q25 = quantile(TWA_hypotension, 0.25),
+            q75 = quantile(TWA_hypotension, 0.75), min = min(TWA_hypotension),
+            max = max(TWA_hypotension), n_hypotension = sum(TWA_hypotension > 0))
+
+cat("Overall (n=", twa_summary$n, "):\n", sep="")
+cat("  Mean ± SD: ", round(twa_summary$mean, 1), " ± ", round(twa_summary$sd, 1), " mmHg\n", sep="")
+cat("  Median [IQR]: ", round(twa_summary$median, 1), " [", round(twa_summary$q25, 1),
+    "-", round(twa_summary$q75, 1), "]\n", sep="")
+cat("  Range: ", round(twa_summary$min, 1), "-", round(twa_summary$max, 1), "\n", sep="")
+cat("  Patients with hypotension: ", twa_summary$n_hypotension, " (",
+    round(twa_summary$n_hypotension/twa_summary$n*100, 1), "%)\n\n", sep="")
+
+# TOTAL COHORT
+cat("\n=== TOTAL COHORT ANALYSIS ===\n")
+create_vitals_mortality_table(obs12_with_pmi, "any_MAP_below_65", "MAP < 65 mmHg", "Total Cohort")
+create_vitals_mortality_table(obs12_with_pmi, "any_HR_above_120", "HR > 120 bpm", "Total Cohort")
+create_vitals_mortality_table(obs12_with_pmi, "any_SpO2_below_90", "SpO2 < 90%", "Total Cohort")
+
+cat("\n--- Total Cohort: TWA Hypotension (continuous) ---\n\n")
+twa_mort_data <- obs12_with_pmi %>% filter(!is.na(TWA_hypotension) & !is.na(death_in_hospital))
+twa_by_mort <- twa_mort_data %>% group_by(death_in_hospital) %>%
+  summarise(n = n(), mean = mean(TWA_hypotension), sd = sd(TWA_hypotension), .groups="drop")
+
+cat("Survived: ", round(twa_by_mort$mean[1], 1), " ± ", round(twa_by_mort$sd[1], 1),
+    " mmHg (n=", twa_by_mort$n[1], ")\n", sep="")
+cat("Died: ", round(twa_by_mort$mean[2], 1), " ± ", round(twa_by_mort$sd[2], 1),
+    " mmHg (n=", twa_by_mort$n[2], ")\n\n", sep="")
+
+twa_test <- wilcox.test(TWA_hypotension ~ death_in_hospital, data = twa_mort_data)
+cat("Mann-Whitney U: p=", format.pval(twa_test$p.value, digits=3), "\n", sep="")
+
+mort_twa <- glm(death_in_hospital ~ TWA_hypotension, data = twa_mort_data, family = binomial)
+or_twa <- exp(coef(mort_twa)[2])
+ci_twa <- exp(confint(mort_twa)[2,])
+cat("OR per unit TWA: ", round(or_twa, 3), " (95%CI: ", round(ci_twa[1], 3), "-",
+    round(ci_twa[2], 3), "), p=", format.pval(summary(mort_twa)$coefficients[2,4], digits=3), "\n", sep="")
+
+# CARDIAC PMI
+cat("\n\n=== CARDIAC PMI SUBGROUP ===\n")
+cardiac_data <- obs12_with_pmi %>% filter(PMI_type == "Cardiac")
+cat("\nn=", nrow(cardiac_data), "\n", sep="")
+
+create_vitals_mortality_table(cardiac_data, "any_MAP_below_65", "MAP < 65 mmHg", "Cardiac PMI")
+create_vitals_mortality_table(cardiac_data, "any_HR_above_120", "HR > 120 bpm", "Cardiac PMI")
+create_vitals_mortality_table(cardiac_data, "any_SpO2_below_90", "SpO2 < 90%", "Cardiac PMI")
+
+cardiac_twa <- cardiac_data %>% filter(!is.na(TWA_hypotension)) %>%
+  summarise(n = n(), mean = mean(TWA_hypotension), sd = sd(TWA_hypotension))
+cat("\n--- Cardiac PMI: TWA ---\n")
+cat("TWA: ", round(cardiac_twa$mean, 1), " ± ", round(cardiac_twa$sd, 1),
+    " mmHg (n=", cardiac_twa$n, ")\n", sep="")
+
+# NONCARDIAC PMI
+cat("\n\n=== NONCARDIAC (EXTRA-CARDIAC) PMI SUBGROUP ===\n")
+noncardiac_data <- obs12_with_pmi %>% filter(PMI_type == "Noncardiac")
+cat("\nn=", nrow(noncardiac_data), "\n", sep="")
+
+create_vitals_mortality_table(noncardiac_data, "any_MAP_below_65", "MAP < 65 mmHg", "Noncardiac PMI")
+create_vitals_mortality_table(noncardiac_data, "any_HR_above_120", "HR > 120 bpm", "Noncardiac PMI")
+create_vitals_mortality_table(noncardiac_data, "any_SpO2_below_90", "SpO2 < 90%", "Noncardiac PMI")
+
+noncardiac_twa <- noncardiac_data %>% filter(!is.na(TWA_hypotension)) %>%
+  summarise(n = n(), mean = mean(TWA_hypotension), sd = sd(TWA_hypotension))
+cat("\n--- Noncardiac PMI: TWA ---\n")
+cat("TWA: ", round(noncardiac_twa$mean, 1), " ± ", round(noncardiac_twa$sd, 1),
+    " mmHg (n=", noncardiac_twa$n, ")\n\n", sep="")
 
 cat("=== POSTOPERATIVE VITALS: ASSOCIATION WITH PMI TYPE ===\n\n")
 
