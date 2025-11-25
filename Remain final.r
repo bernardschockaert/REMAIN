@@ -261,6 +261,7 @@ patient_hemodynamics <- vital_signs %>%
     any_MAP_below_65 = any(MAP < 65, na.rm = TRUE),
     any_HR_above_120 = any(HR > 120, na.rm = TRUE),
     any_SpO2_below_90 = any(SpO2 < 90, na.rm = TRUE),
+    TWA_hypotension = sum(pmax(65 - MAP, 0), na.rm = TRUE),  # Time-weighted average below 65
     .groups = "drop"
   )
 
@@ -1579,19 +1580,23 @@ cat("Number of disagreed cases:", nrow(disagreed_mortality_data), "\n")
 cat("\n\n=== POSTOPERATIVE VITALS: ASSOCIATION WITH IN-HOSPITAL MORTALITY ===\n\n")
 
 # Association with in-hospital mortality
-mort_map <- glm(in_hospital_mortality ~ any_MAP_below_65, data = obs12_with_pmi, family = binomial)
-mort_hr <- glm(in_hospital_mortality ~ any_HR_above_120, data = obs12_with_pmi, family = binomial)
-mort_spo2 <- glm(in_hospital_mortality ~ any_SpO2_below_90, data = obs12_with_pmi, family = binomial)
+mort_map <- glm(death_in_hospital ~ any_MAP_below_65, data = obs12_with_pmi, family = binomial)
+mort_hr <- glm(death_in_hospital ~ any_HR_above_120, data = obs12_with_pmi, family = binomial)
+mort_spo2 <- glm(death_in_hospital ~ any_SpO2_below_90, data = obs12_with_pmi, family = binomial)
+mort_twa <- glm(death_in_hospital ~ TWA_hypotension, data = obs12_with_pmi, family = binomial)
 
-cat("MAP<65 → Mortality: OR=", round(exp(coef(mort_map)[2]), 2),
+cat("MAP<65 (any episode) → Mortality: OR=", round(exp(coef(mort_map)[2]), 2),
     " (95%CI:", round(exp(confint(mort_map)[2,1]), 2), "-", round(exp(confint(mort_map)[2,2]), 2), ")",
     " p=", format.pval(summary(mort_map)$coefficients[2,4], digits=3), "\n")
-cat("HR>120 → Mortality: OR=", round(exp(coef(mort_hr)[2]), 2),
+cat("HR>120 (any episode) → Mortality: OR=", round(exp(coef(mort_hr)[2]), 2),
     " (95%CI:", round(exp(confint(mort_hr)[2,1]), 2), "-", round(exp(confint(mort_hr)[2,2]), 2), ")",
     " p=", format.pval(summary(mort_hr)$coefficients[2,4], digits=3), "\n")
-cat("SpO2<90 → Mortality: OR=", round(exp(coef(mort_spo2)[2]), 2),
+cat("SpO2<90 (any episode) → Mortality: OR=", round(exp(coef(mort_spo2)[2]), 2),
     " (95%CI:", round(exp(confint(mort_spo2)[2,1]), 2), "-", round(exp(confint(mort_spo2)[2,2]), 2), ")",
-    " p=", format.pval(summary(mort_spo2)$coefficients[2,4], digits=3), "\n\n")
+    " p=", format.pval(summary(mort_spo2)$coefficients[2,4], digits=3), "\n")
+cat("TWA Hypotension (continuous) → Mortality: OR=", round(exp(coef(mort_twa)[2]), 2),
+    " (95%CI:", round(exp(confint(mort_twa)[2,1]), 2), "-", round(exp(confint(mort_twa)[2,2]), 2), ")",
+    " p=", format.pval(summary(mort_twa)$coefficients[2,4], digits=3), "\n\n")
 
 cat("=== POSTOPERATIVE VITALS: ASSOCIATION WITH PMI TYPE ===\n\n")
 
