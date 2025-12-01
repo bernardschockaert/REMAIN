@@ -1376,6 +1376,9 @@ pmi_causes_chart_data <- obs12_with_pmi %>%
 
 # Create bar chart with color coding and mortality information
 # Light blue for Noncardiac (extracardiac), Light red for Cardiac
+# Calculate max percentage to position mortality labels properly
+max_pct <- max(pmi_causes_chart_data$Percentage, na.rm = TRUE)
+
 pmi_causes_plot <- ggplot(pmi_causes_chart_data, aes(x = reorder(PMI_category_display, plot_order),
                                                        y = Percentage,
                                                        fill = PMI_type)) +
@@ -1395,19 +1398,22 @@ pmi_causes_plot <- ggplot(pmi_causes_chart_data, aes(x = reorder(PMI_category_di
     plot.subtitle = element_text(hjust = 0.5, size = 12),
     axis.text.y = element_text(size = 10),
     axis.text.x = element_text(size = 10),
-    legend.position = "bottom"
+    legend.position = "bottom",
+    plot.margin = margin(5, 100, 5, 5)  # Add right margin for mortality labels
   ) +
-  # Label with N and percentage
+  # Extend x-axis to make room for labels
+  scale_y_continuous(expand = expansion(mult = c(0, 0.35))) +
+  # Label with N and percentage (right next to bar)
   geom_text(aes(label = paste0("n=", N, " (", Percentage, "%)")),
             hjust = -0.1,
             size = 3) +
-  # Label with in-hospital mortality
+  # Label with in-hospital mortality (further to the right in separate column)
   geom_text(aes(label = paste0("Mort: ", Deaths_InHospital, " (", Mortality_InHospital_Pct, "%)")),
-            hjust = -0.1,
-            nudge_y = -0.8,  # Position below the first label
-            size = 2.5,
-            color = "red",
-            fontface = "italic")
+            aes(y = max_pct * 1.15),  # Position at fixed location to the right
+            hjust = 0,
+            size = 3,
+            color = "darkred",
+            fontface = "bold")
 
 # Save the plot
 ggsave("PMI_Causes_BarChart_OBS12.png", plot = pmi_causes_plot, width = 10, height = 8, dpi = 300)
