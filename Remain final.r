@@ -459,12 +459,12 @@ patient_hemodynamics <- vital_signs %>%
     any_MAP_below_65 = any(MAP < 65, na.rm = TRUE),
     # HR: use the highest (worst case for tachycardia)
     max_HR = max(HR, na.rm = TRUE),
-    any_HR_above_120 = max_HR > 120,
+    any_HR_above_120 = !is.na(max_HR) & is.finite(max_HR) & max_HR > 120,
     # SpO2: use the lowest (worst case for hypoxemia)
     min_SpO2 = min(SpO2, na.rm = TRUE),
-    any_SpO2_below_90 = min_SpO2 < 90,
+    any_SpO2_below_90 = !is.na(min_SpO2) & is.finite(min_SpO2) & min_SpO2 < 90,
     # TWA hypotension
-    TWA_hypotension = sum(pmax(65 - MAP, 0), na.rm = TRUE),
+    TWA_hypotension = sum(pmax(65 - MAP, 0, na.rm = TRUE), na.rm = TRUE),
     .groups = "drop"
   )
 
