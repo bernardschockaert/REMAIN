@@ -1403,7 +1403,7 @@ plot1 <- ggplot(pmi_causes_chart_data, aes(x = reorder(PMI_category_display, plo
     legend.position = "bottom"
   ) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
-  geom_text(aes(label = paste0("n=", N, " (", Percentage, "%)")),
+  geom_text(aes(label = paste0(N, " (", Percentage, "%)")),
             hjust = -0.1,
             size = 3)
 
@@ -1427,14 +1427,12 @@ plot2 <- ggplot(mortality_data <- pmi_causes_chart_data,
     axis.text.y = element_blank(),  # Remove y-axis labels (same as plot 1)
     axis.ticks.y = element_blank(),
     axis.text.x = element_text(size = 10),
-    legend.position = "bottom"
+    legend.position = "none"  # Hide legend to avoid duplication
   ) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
   geom_text(aes(label = paste0(Deaths_InHospital, " (", Mortality_InHospital_Pct, "%)")),
             hjust = -0.1,
-            size = 3,
-            color = "darkred",
-            fontface = "bold")
+            size = 3)
 
 # Combine plots side by side
 combined_plot <- grid.arrange(plot1, plot2, ncol = 2,
