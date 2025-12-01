@@ -1436,7 +1436,7 @@ plot2 <- ggplot(mortality_data <- pmi_causes_chart_data,
 
 # Combine plots side by side
 combined_plot <- grid.arrange(plot1, plot2, ncol = 2,
-                              top = textGrob("PMI Aetiology: Distribution and In-Hospital Mortality (OBS12)",
+                              top = textGrob("PMI Aetiology: Distribution and In-Hospital Mortality",
                                            gp = gpar(fontsize = 14, fontface = "bold")))
 
 # Save the combined plot
