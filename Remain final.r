@@ -398,15 +398,38 @@ hemodynamics <- postoperativevitals %>%
   filter(code_display_original %in% c("ABP", "NIBP", "HR", "SpO2"))
 
 # Extract vital signs - Prioritize ABP over NIBP
+# Blood pressure comes as 3 values: Systolic (highest), MAP (middle), Diastolic (lowest)
+# Extract the middle value (MAP) from each blood pressure measurement
 abp_data <- hemodynamics %>%
   filter(code_display_original == "ABP") %>%
   group_by(pseudonym_value, effectiveDateTime) %>%
-  summarise(MAP = mean(valueQuantity_value, na.rm = TRUE), source = "ABP", .groups = "drop")
+  arrange(valueQuantity_value) %>%
+  # Take the median value (middle of 3: systolic, MAP, diastolic)
+  summarise(
+    MAP = if(n() >= 3) {
+      sorted_vals <- sort(valueQuantity_value)
+      sorted_vals[ceiling(n()/2)]  # Middle value
+    } else {
+      median(valueQuantity_value, na.rm = TRUE)
+    },
+    source = "ABP",
+    .groups = "drop"
+  )
 
 nibp_data <- hemodynamics %>%
   filter(code_display_original == "NIBP") %>%
   group_by(pseudonym_value, effectiveDateTime) %>%
-  summarise(MAP = mean(valueQuantity_value, na.rm = TRUE), source = "NIBP", .groups = "drop")
+  arrange(valueQuantity_value) %>%
+  summarise(
+    MAP = if(n() >= 3) {
+      sorted_vals <- sort(valueQuantity_value)
+      sorted_vals[ceiling(n()/2)]  # Middle value
+    } else {
+      median(valueQuantity_value, na.rm = TRUE)
+    },
+    source = "NIBP",
+    .groups = "drop"
+  )
 
 # Combine: use ABP when available, NIBP only when ABP missing
 bp_data <- abp_data %>%
@@ -417,11 +440,12 @@ bp_data <- abp_data %>%
   ungroup() %>%
   select(pseudonym_value, effectiveDateTime, MAP)
 
-# Extract HR and SpO2
+# Extract HR (use highest per patient)
 hr_data <- hemodynamics %>%
   filter(code_display_original == "HR") %>%
   select(pseudonym_value, effectiveDateTime, HR = valueQuantity_value)
 
+# Extract SpO2 (use lowest per patient)
 spo2_data <- hemodynamics %>%
   filter(code_display_original == "SpO2") %>%
   select(pseudonym_value, effectiveDateTime, SpO2 = valueQuantity_value)
@@ -431,14 +455,20 @@ vital_signs <- bp_data %>%
   full_join(hr_data, by = c("pseudonym_value", "effectiveDateTime")) %>%
   full_join(spo2_data, by = c("pseudonym_value", "effectiveDateTime"))
 
-# Patient-level summary with TWA hypotension
+# Patient-level summary: use highest HR and lowest SpO2 per patient
 patient_hemodynamics <- vital_signs %>%
   group_by(pseudonym_value) %>%
   summarise(
+    # MAP: check if any measurement was below 65
     any_MAP_below_65 = any(MAP < 65, na.rm = TRUE),
-    any_HR_above_120 = any(HR > 120, na.rm = TRUE),
-    any_SpO2_below_90 = any(SpO2 < 90, na.rm = TRUE),
-    TWA_hypotension = sum(pmax(65 - MAP, 0), na.rm = TRUE),  # Time-weighted average below 65
+    # HR: use the highest (worst case for tachycardia)
+    max_HR = max(HR, na.rm = TRUE),
+    any_HR_above_120 = max_HR > 120,
+    # SpO2: use the lowest (worst case for hypoxemia)
+    min_SpO2 = min(SpO2, na.rm = TRUE),
+    any_SpO2_below_90 = min_SpO2 < 90,
+    # TWA hypotension
+    TWA_hypotension = sum(pmax(65 - MAP, 0), na.rm = TRUE),
     .groups = "drop"
   )
 
