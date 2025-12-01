@@ -1,4 +1,8 @@
-#REMAIN OBS1/2/3/4 - Enhanced Analysis with PMI Categories, Surgical Specialty Analysis, and T2MI Curves
+#REMAIN OBS1/2/3/4 - MASTER CODE: Enhanced Analysis with PMI Categories, Surgical Specialty Analysis, T2MI Curves, and Postoperative Vitals
+# Integrated Sessions:
+# 1. In-hospital mortality by PMI aetiology
+# 2. Postoperative vitals analysis (hypotension & tachycardia)
+# 3. Expanded exclusion list with old/insufficient data entries
 # Set CRAN mirror (Netherlands)
 options(repos = c(CRAN = "https://cran.rstudio.com/"))
 
@@ -32,6 +36,7 @@ data <- read_csv2("Z:/REMAIN/Castor exports/REMAIN_ALLOBS_participant_data_csv_2
 #Coupling pseudonym_value and castor study nr
 coupling <- read_excel("Z:/REMAIN/Mario Stark/Files gebruikt tijdens stage/Castor+pseudonym+date.xlsx")
 demographics <- read_csv("Z:/REMAIN/Data export Datacapture/REMAIN - 2024-06-20 - demografie.csv")
+postoperativevitals <- read.csv("Z:/REMAIN/Data export Datacapture/REMAIN - metingen_postoperatief_20241010.csv")
 
 #Exclude LOTx, centrale lijn, minor eg gastroscopy, tropo incorrect, recent cardiac surgery/intervention, organ donation and old/insufficient file
 exclude_ids <- c(110014,110015,110083,110096,110279,110287,110300,110306,110308,110368,110376,110416,110470,110719,110930,110941,110951,110981,111009,110100,110148,110289,110318,110347,110349,110379,110567,110609,110694,110752,110908,111049,110162,110166,110210,110248,110398,110445,110487,110577,110614,110627,110635,110707,110743,110827,110864,110873,110891,110914,110995,110028,110033,110051,110067,110068,110099,110114,110117,110126,110131,110143,110160,110183,110187,110198,110205,110214,110221,110222,110225,110230,110238,110251,110261,110270,110330,110343,110357,110378,110382,110399,110408,110418,110431,110432,110443,110451,110455,110456,110458,110476,110491,110515,110521,110544,110550,110553,110573,110586,110588,110608,110644,110669,110686,110722,110726,110747,110753,110765,110774,110776,110783,110789,110841,110876,110878,110879,110884,110899,110911,110920,110922,110931,110933,110943,110948,110953,110970,110973,110983,110985,110987,110993,110998,111001,111005,111011,111012,111014,111026,111030,111032,111034,111038,111053,111055,111056,111064,111070,111075,111076,111082,111087,111097
@@ -208,6 +213,91 @@ agreed_survival <- obs12 %>%
   inner_join(agreed_patients, by = "Participant Id") %>%
   filter(!is.na(PMI_type)) %>%
   distinct(Pseudonym, .keep_all = TRUE)
+
+# ========== POSTOPERATIVE VITALS PROCESSING ==========
+
+cat("\n\n=== PROCESSING POSTOPERATIVE VITALS ===\n\n")
+
+# Load hemodynamics data from postoperative vitals
+hemodynamics <- postoperativevitals %>%
+  filter(code_display_original %in% c("ABP", "NIBP", "HR", "SpO2"))
+
+# Extract vital signs - Prioritize ABP over NIBP for blood pressure
+abp_data <- hemodynamics %>%
+  filter(code_display_original == "ABP") %>%
+  group_by(pseudonym_value, effectiveDateTime) %>%
+  summarise(MAP = mean(valueQuantity_value, na.rm = TRUE), source = "ABP", .groups = "drop")
+
+nibp_data <- hemodynamics %>%
+  filter(code_display_original == "NIBP") %>%
+  group_by(pseudonym_value, effectiveDateTime) %>%
+  summarise(MAP = mean(valueQuantity_value, na.rm = TRUE), source = "NIBP", .groups = "drop")
+
+# Combine: use ABP when available, NIBP only when ABP missing
+bp_data <- abp_data %>%
+  bind_rows(nibp_data) %>%
+  group_by(pseudonym_value, effectiveDateTime) %>%
+  arrange(desc(source)) %>%  # ABP comes before NIBP alphabetically
+  slice(1) %>%  # Take first (ABP if present, else NIBP)
+  ungroup() %>%
+  select(pseudonym_value, effectiveDateTime, MAP)
+
+# Extract heart rate and SpO2
+hr_data <- hemodynamics %>%
+  filter(code_display_original == "HR") %>%
+  select(pseudonym_value, effectiveDateTime, HR = valueQuantity_value)
+
+spo2_data <- hemodynamics %>%
+  filter(code_display_original == "SpO2") %>%
+  select(pseudonym_value, effectiveDateTime, SpO2 = valueQuantity_value)
+
+# Combine all vital signs
+vital_signs <- bp_data %>%
+  full_join(hr_data, by = c("pseudonym_value", "effectiveDateTime")) %>%
+  full_join(spo2_data, by = c("pseudonym_value", "effectiveDateTime"))
+
+# Patient-level summary with TWA hypotension and threshold violations
+patient_hemodynamics <- vital_signs %>%
+  group_by(pseudonym_value) %>%
+  summarise(
+    any_MAP_below_65 = any(MAP < 65, na.rm = TRUE),
+    any_HR_above_120 = any(HR > 120, na.rm = TRUE),
+    any_SpO2_below_90 = any(SpO2 < 90, na.rm = TRUE),
+    TWA_hypotension = sum(pmax(65 - MAP, 0), na.rm = TRUE),  # Time-weighted average below 65
+    .groups = "drop"
+  )
+
+# Add in-hospital mortality variable based on time_to_death
+data_included <- data_included %>%
+  mutate(death_in_hospital = if_else(!is.na(time_to_death) & time_to_death <= 30, 1, 0))
+
+# Merge vital signs with obs12_with_pmi and agreed_survival
+obs12_with_pmi <- obs12_with_pmi %>%
+  left_join(patient_hemodynamics, by = c("Pseudonym" = "pseudonym_value"))
+
+agreed_survival <- agreed_survival %>%
+  left_join(patient_hemodynamics, by = c("Pseudonym" = "pseudonym_value"))
+
+# Add in-hospital mortality to both datasets
+obs12_with_pmi <- obs12_with_pmi %>%
+  mutate(death_in_hospital = if_else(!is.na(time_to_death) & time_to_death <= 30, 1, 0))
+
+agreed_survival <- agreed_survival %>%
+  mutate(death_in_hospital = if_else(!is.na(time_to_death) & time_to_death <= 30, 1, 0))
+
+# Summary statistics for vital sign thresholds
+vitals_summary <- patient_hemodynamics %>%
+  summarise(
+    N = n(),
+    MAP_below_65 = sum(any_MAP_below_65, na.rm = TRUE) / N * 100,
+    HR_above_120 = sum(any_HR_above_120, na.rm = TRUE) / N * 100,
+    SpO2_below_90 = sum(any_SpO2_below_90, na.rm = TRUE) / N * 100
+  )
+
+cat("Postoperative vital sign threshold violations (% of total cohort):\n")
+cat("  MAP < 65 mmHg:", round(vitals_summary$MAP_below_65, 1), "%\n")
+cat("  HR > 120 bpm:", round(vitals_summary$HR_above_120, 1), "%\n")
+cat("  SpO2 < 90%:", round(vitals_summary$SpO2_below_90, 1), "%\n\n")
 
 # ========== PMI CATEGORY BREAKDOWN - OBS12 ==========
 
@@ -992,6 +1082,271 @@ ggsurvplot(
   palette = c("#E7B800", "#2E9FDF")
 )
 
+# ========== POSTOPERATIVE VITALS: MORTALITY ANALYSIS ==========
+
+cat("\n\n=== POSTOPERATIVE VITALS AND IN-HOSPITAL MORTALITY ===\n\n")
+
+# Helper function to create vitals mortality tables
+create_vitals_mortality_table <- function(data, threshold_var, threshold_name, cohort_name) {
+  cat("\n--- ", cohort_name, ": ", threshold_name, " ---\n\n", sep="")
+
+  # Use base R filtering instead of tidy evaluation
+  data_clean <- data[!is.na(data[[threshold_var]]) & !is.na(data$death_in_hospital), ]
+
+  if(nrow(data_clean) == 0) {
+    cat("No data available\n")
+    return(NULL)
+  }
+
+  ct <- table(data_clean[[threshold_var]], data_clean$death_in_hospital)
+
+  below <- sum(data_clean[[threshold_var]] == TRUE, na.rm = TRUE)
+  above <- sum(data_clean[[threshold_var]] == FALSE, na.rm = TRUE)
+  mort_below <- sum(data_clean[[threshold_var]] == TRUE & data_clean$death_in_hospital == 1, na.rm = TRUE)
+  mort_above <- sum(data_clean[[threshold_var]] == FALSE & data_clean$death_in_hospital == 1, na.rm = TRUE)
+
+  pct_mort_below <- if(below > 0) mort_below / below * 100 else NA
+  pct_mort_above <- if(above > 0) mort_above / above * 100 else NA
+  se_below <- if(below > 0) sqrt(pct_mort_below * (100 - pct_mort_below) / below) else NA
+  se_above <- if(above > 0) sqrt(pct_mort_above * (100 - pct_mort_above) / above) else NA
+
+  if(min(ct) >= 5) {
+    test <- chisq.test(ct)
+    test_name <- "Chi-square"
+    p_value <- test$p.value
+  } else {
+    test <- fisher.test(ct)
+    test_name <- "Fisher's exact"
+    p_value <- test$p.value
+  }
+
+  cat("Threshold violation present (n=", below, "):\n", sep="")
+  cat("  Deaths: ", mort_below, " (", round(pct_mort_below, 1), "% ± ", round(se_below, 1), " SE)\n", sep="")
+  cat("No threshold violation (n=", above, "):\n", sep="")
+  cat("  Deaths: ", mort_above, " (", round(pct_mort_above, 1), "% ± ", round(se_above, 1), " SE)\n\n", sep="")
+  cat(test_name, " test: p=", format.pval(p_value, digits=3), "\n", sep="")
+
+  # Build formula using as.formula for base R compatibility
+  formula_str <- paste("death_in_hospital ~", threshold_var)
+  model <- glm(as.formula(formula_str), data = data_clean, family = binomial)
+  or <- exp(coef(model)[2])
+  ci <- exp(confint(model)[2,])
+  p_glm <- summary(model)$coefficients[2,4]
+  cat("Odds Ratio: ", round(or, 2), " (95%CI: ", round(ci[1], 2), "-", round(ci[2], 2),
+      "), p=", format.pval(p_glm, digits=3), "\n", sep="")
+}
+
+# SUMMARY TABLE - TOTAL COHORT
+cat("\n\n=== SUMMARY TABLE: TOTAL COHORT ===\n\n")
+cat("Postoperative Vital Sign Thresholds and In-Hospital Mortality\n\n")
+cat(sprintf("%-20s | %-15s | %-15s | %-12s | %-20s | %-10s\n",
+            "Threshold", "With Violation", "No Violation", "p-value", "Odds Ratio (95%CI)", ""))
+cat(sprintf("%s\n", paste(rep("-", 100), collapse="")))
+
+# MAP < 65
+map_data <- obs12_with_pmi[!is.na(obs12_with_pmi$any_MAP_below_65) & !is.na(obs12_with_pmi$death_in_hospital), ]
+if(nrow(map_data) > 0 && sum(map_data$any_MAP_below_65 == TRUE) > 0 && sum(map_data$any_MAP_below_65 == FALSE) > 0) {
+  map_with <- sum(map_data$any_MAP_below_65 == TRUE & map_data$death_in_hospital == 1) / sum(map_data$any_MAP_below_65 == TRUE) * 100
+  map_without <- sum(map_data$any_MAP_below_65 == FALSE & map_data$death_in_hospital == 1) / sum(map_data$any_MAP_below_65 == FALSE) * 100
+  map_test <- if(min(table(map_data$any_MAP_below_65, map_data$death_in_hospital)) >= 5) chisq.test(table(map_data$any_MAP_below_65, map_data$death_in_hospital))$p.value else fisher.test(table(map_data$any_MAP_below_65, map_data$death_in_hospital))$p.value
+  map_model <- glm(death_in_hospital ~ any_MAP_below_65, data = map_data, family = binomial)
+  map_or <- exp(coef(map_model)[2])
+  map_ci <- exp(confint(map_model)[2,])
+
+  cat(sprintf("%-20s | %6.1f%% (n=%3d) | %6.1f%% (n=%3d) | %-12s | %4.2f (%4.2f-%4.2f)\n",
+              "MAP < 65 mmHg",
+              map_with, sum(map_data$any_MAP_below_65 == TRUE),
+              map_without, sum(map_data$any_MAP_below_65 == FALSE),
+              format.pval(map_test, digits=3),
+              map_or, map_ci[1], map_ci[2]))
+}
+
+# HR > 120
+hr_data <- obs12_with_pmi[!is.na(obs12_with_pmi$any_HR_above_120) & !is.na(obs12_with_pmi$death_in_hospital), ]
+if(nrow(hr_data) > 0 && sum(hr_data$any_HR_above_120 == TRUE) > 0 && sum(hr_data$any_HR_above_120 == FALSE) > 0) {
+  hr_with <- sum(hr_data$any_HR_above_120 == TRUE & hr_data$death_in_hospital == 1) / sum(hr_data$any_HR_above_120 == TRUE) * 100
+  hr_without <- sum(hr_data$any_HR_above_120 == FALSE & hr_data$death_in_hospital == 1) / sum(hr_data$any_HR_above_120 == FALSE) * 100
+  hr_test <- if(min(table(hr_data$any_HR_above_120, hr_data$death_in_hospital)) >= 5) chisq.test(table(hr_data$any_HR_above_120, hr_data$death_in_hospital))$p.value else fisher.test(table(hr_data$any_HR_above_120, hr_data$death_in_hospital))$p.value
+  hr_model <- glm(death_in_hospital ~ any_HR_above_120, data = hr_data, family = binomial)
+  hr_or <- exp(coef(hr_model)[2])
+  hr_ci <- exp(confint(hr_model)[2,])
+
+  cat(sprintf("%-20s | %6.1f%% (n=%3d) | %6.1f%% (n=%3d) | %-12s | %4.2f (%4.2f-%4.2f)\n",
+              "HR > 120 bpm",
+              hr_with, sum(hr_data$any_HR_above_120 == TRUE),
+              hr_without, sum(hr_data$any_HR_above_120 == FALSE),
+              format.pval(hr_test, digits=3),
+              hr_or, hr_ci[1], hr_ci[2]))
+}
+
+# SpO2 < 90
+spo2_data <- obs12_with_pmi[!is.na(obs12_with_pmi$any_SpO2_below_90) & !is.na(obs12_with_pmi$death_in_hospital), ]
+if(nrow(spo2_data) > 0 && sum(spo2_data$any_SpO2_below_90 == TRUE) > 0 && sum(spo2_data$any_SpO2_below_90 == FALSE) > 0) {
+  spo2_with <- sum(spo2_data$any_SpO2_below_90 == TRUE & spo2_data$death_in_hospital == 1) / sum(spo2_data$any_SpO2_below_90 == TRUE) * 100
+  spo2_without <- sum(spo2_data$any_SpO2_below_90 == FALSE & spo2_data$death_in_hospital == 1) / sum(spo2_data$any_SpO2_below_90 == FALSE) * 100
+  spo2_test <- if(min(table(spo2_data$any_SpO2_below_90, spo2_data$death_in_hospital)) >= 5) chisq.test(table(spo2_data$any_SpO2_below_90, spo2_data$death_in_hospital))$p.value else fisher.test(table(spo2_data$any_SpO2_below_90, spo2_data$death_in_hospital))$p.value
+  spo2_model <- glm(death_in_hospital ~ any_SpO2_below_90, data = spo2_data, family = binomial)
+  spo2_or <- exp(coef(spo2_model)[2])
+  spo2_ci <- exp(confint(spo2_model)[2,])
+
+  cat(sprintf("%-20s | %6.1f%% (n=%3d) | %6.1f%% (n=%3d) | %-12s | %4.2f (%4.2f-%4.2f)\n",
+              "SpO2 < 90%",
+              spo2_with, sum(spo2_data$any_SpO2_below_90 == TRUE),
+              spo2_without, sum(spo2_data$any_SpO2_below_90 == FALSE),
+              format.pval(spo2_test, digits=3),
+              spo2_or, spo2_ci[1], spo2_ci[2]))
+}
+
+# SUMMARY TABLE - CARDIAC PMI SUBGROUP
+cat("\n\n=== SUMMARY TABLE: CARDIAC PMI ===\n\n")
+cat("Postoperative Vital Sign Thresholds and In-Hospital Mortality (Cardiac PMI Only)\n\n")
+
+cardiac_data <- obs12_with_pmi %>% filter(PMI_type == "Cardiac")
+
+cat(sprintf("%-20s | %-15s | %-15s | %-12s | %-20s | %-10s\n",
+            "Threshold", "With Violation", "No Violation", "p-value", "Odds Ratio (95%CI)", ""))
+cat(sprintf("%s\n", paste(rep("-", 100), collapse="")))
+
+# MAP < 65 (Cardiac)
+map_cardiac <- cardiac_data[!is.na(cardiac_data$any_MAP_below_65) & !is.na(cardiac_data$death_in_hospital), ]
+if(nrow(map_cardiac) > 0 && sum(map_cardiac$any_MAP_below_65 == TRUE) > 0 && sum(map_cardiac$any_MAP_below_65 == FALSE) > 0) {
+  map_c_with <- sum(map_cardiac$any_MAP_below_65 == TRUE & map_cardiac$death_in_hospital == 1) / sum(map_cardiac$any_MAP_below_65 == TRUE) * 100
+  map_c_without <- sum(map_cardiac$any_MAP_below_65 == FALSE & map_cardiac$death_in_hospital == 1) / sum(map_cardiac$any_MAP_below_65 == FALSE) * 100
+  map_c_test <- if(min(table(map_cardiac$any_MAP_below_65, map_cardiac$death_in_hospital)) >= 5) chisq.test(table(map_cardiac$any_MAP_below_65, map_cardiac$death_in_hospital))$p.value else fisher.test(table(map_cardiac$any_MAP_below_65, map_cardiac$death_in_hospital))$p.value
+  map_c_model <- glm(death_in_hospital ~ any_MAP_below_65, data = map_cardiac, family = binomial)
+  map_c_or <- exp(coef(map_c_model)[2])
+  map_c_ci <- exp(confint(map_c_model)[2,])
+
+  cat(sprintf("%-20s | %6.1f%% (n=%3d) | %6.1f%% (n=%3d) | %-12s | %4.2f (%4.2f-%4.2f)\n",
+              "MAP < 65 mmHg",
+              map_c_with, sum(map_cardiac$any_MAP_below_65 == TRUE),
+              map_c_without, sum(map_cardiac$any_MAP_below_65 == FALSE),
+              format.pval(map_c_test, digits=3),
+              map_c_or, map_c_ci[1], map_c_ci[2]))
+}
+
+# HR > 120 (Cardiac)
+hr_cardiac <- cardiac_data[!is.na(cardiac_data$any_HR_above_120) & !is.na(cardiac_data$death_in_hospital), ]
+if(nrow(hr_cardiac) > 0 && sum(hr_cardiac$any_HR_above_120 == TRUE) > 0 && sum(hr_cardiac$any_HR_above_120 == FALSE) > 0) {
+  hr_c_with <- sum(hr_cardiac$any_HR_above_120 == TRUE & hr_cardiac$death_in_hospital == 1) / sum(hr_cardiac$any_HR_above_120 == TRUE) * 100
+  hr_c_without <- sum(hr_cardiac$any_HR_above_120 == FALSE & hr_cardiac$death_in_hospital == 1) / sum(hr_cardiac$any_HR_above_120 == FALSE) * 100
+  hr_c_test <- if(min(table(hr_cardiac$any_HR_above_120, hr_cardiac$death_in_hospital)) >= 5) chisq.test(table(hr_cardiac$any_HR_above_120, hr_cardiac$death_in_hospital))$p.value else fisher.test(table(hr_cardiac$any_HR_above_120, hr_cardiac$death_in_hospital))$p.value
+  hr_c_model <- glm(death_in_hospital ~ any_HR_above_120, data = hr_cardiac, family = binomial)
+  hr_c_or <- exp(coef(hr_c_model)[2])
+  hr_c_ci <- exp(confint(hr_c_model)[2,])
+
+  cat(sprintf("%-20s | %6.1f%% (n=%3d) | %6.1f%% (n=%3d) | %-12s | %4.2f (%4.2f-%4.2f)\n",
+              "HR > 120 bpm",
+              hr_c_with, sum(hr_cardiac$any_HR_above_120 == TRUE),
+              hr_c_without, sum(hr_cardiac$any_HR_above_120 == FALSE),
+              format.pval(hr_c_test, digits=3),
+              hr_c_or, hr_c_ci[1], hr_c_ci[2]))
+}
+
+# SpO2 < 90 (Cardiac)
+spo2_cardiac <- cardiac_data[!is.na(cardiac_data$any_SpO2_below_90) & !is.na(cardiac_data$death_in_hospital), ]
+if(nrow(spo2_cardiac) > 0 && sum(spo2_cardiac$any_SpO2_below_90 == TRUE) > 0 && sum(spo2_cardiac$any_SpO2_below_90 == FALSE) > 0) {
+  spo2_c_with <- sum(spo2_cardiac$any_SpO2_below_90 == TRUE & spo2_cardiac$death_in_hospital == 1) / sum(spo2_cardiac$any_SpO2_below_90 == TRUE) * 100
+  spo2_c_without <- sum(spo2_cardiac$any_SpO2_below_90 == FALSE & spo2_cardiac$death_in_hospital == 1) / sum(spo2_cardiac$any_SpO2_below_90 == FALSE) * 100
+  spo2_c_test <- if(min(table(spo2_cardiac$any_SpO2_below_90, spo2_cardiac$death_in_hospital)) >= 5) chisq.test(table(spo2_cardiac$any_SpO2_below_90, spo2_cardiac$death_in_hospital))$p.value else fisher.test(table(spo2_cardiac$any_SpO2_below_90, spo2_cardiac$death_in_hospital))$p.value
+  spo2_c_model <- glm(death_in_hospital ~ any_SpO2_below_90, data = spo2_cardiac, family = binomial)
+  spo2_c_or <- exp(coef(spo2_c_model)[2])
+  spo2_c_ci <- exp(confint(spo2_c_model)[2,])
+
+  cat(sprintf("%-20s | %6.1f%% (n=%3d) | %6.1f%% (n=%3d) | %-12s | %4.2f (%4.2f-%4.2f)\n",
+              "SpO2 < 90%",
+              spo2_c_with, sum(spo2_cardiac$any_SpO2_below_90 == TRUE),
+              spo2_c_without, sum(spo2_cardiac$any_SpO2_below_90 == FALSE),
+              format.pval(spo2_c_test, digits=3),
+              spo2_c_or, spo2_c_ci[1], spo2_c_ci[2]))
+}
+
+# ========== BAR CHARTS FOR VITAL SIGNS ==========
+
+cat("\n\n=== CREATING BAR CHARTS FOR VITAL SIGNS ===\n\n")
+
+# Bar chart 1: Overall threshold violations
+threshold_data <- data.frame(
+  Threshold = c("MAP < 65 mmHg", "HR > 120 bpm", "SpO2 < 90%"),
+  Percentage = c(vitals_summary$MAP_below_65, vitals_summary$HR_above_120, vitals_summary$SpO2_below_90)
+)
+
+p1 <- ggplot(threshold_data, aes(x = reorder(Threshold, Percentage), y = Percentage)) +
+  geom_bar(stat = "identity", fill = "#4292c6", width = 0.7) +
+  geom_text(aes(label = paste0(round(Percentage, 1), "%")), hjust = -0.2, size = 4) +
+  coord_flip() +
+  ylim(0, max(threshold_data$Percentage) * 1.15) +
+  labs(title = "Postoperative Vital Sign Threshold Violations",
+       subtitle = "Percentage of Total Cases",
+       x = "Threshold",
+       y = "Percentage (%)") +
+  theme_minimal()
+
+print(p1)
+
+# Bar chart 2: Threshold violations by PMI type (Cardiac vs Noncardiac)
+obs12_pmi_vitals <- obs12_with_pmi %>%
+  group_by(PMI_type) %>%
+  summarise(
+    MAP_below_65 = sum(any_MAP_below_65 == TRUE, na.rm = TRUE) / n() * 100,
+    HR_above_120 = sum(any_HR_above_120 == TRUE, na.rm = TRUE) / n() * 100,
+    SpO2_below_90 = sum(any_SpO2_below_90 == TRUE, na.rm = TRUE) / n() * 100,
+    .groups = "drop"
+  ) %>%
+  pivot_longer(cols = c(MAP_below_65, HR_above_120, SpO2_below_90),
+               names_to = "Threshold", values_to = "Percentage") %>%
+  mutate(Threshold = case_when(
+    Threshold == "MAP_below_65" ~ "MAP < 65 mmHg",
+    Threshold == "HR_above_120" ~ "HR > 120 bpm",
+    Threshold == "SpO2_below_90" ~ "SpO2 < 90%"
+  ))
+
+p2 <- ggplot(obs12_pmi_vitals, aes(x = Threshold, y = Percentage, fill = PMI_type)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  geom_text(aes(label = paste0(round(Percentage, 1), "%")),
+            position = position_dodge(width = 0.7), vjust = -0.5, size = 3.5) +
+  labs(title = "Threshold Violations by PMI Type",
+       subtitle = "Cardiac vs Noncardiac",
+       x = "Threshold",
+       y = "Percentage (%)",
+       fill = "PMI Type") +
+  theme_minimal() +
+  scale_fill_manual(values = c("#E7B800", "#2E9FDF"))
+
+print(p2)
+
+# Bar chart 3: Mortality rates by threshold violations
+mortality_data <- data.frame(
+  Threshold = c("MAP < 65 mmHg", "HR > 120 bpm", "SpO2 < 90%"),
+  With_Violation = c(
+    if(exists("map_with")) map_with else NA,
+    if(exists("hr_with")) hr_with else NA,
+    if(exists("spo2_with")) spo2_with else NA
+  ),
+  Without_Violation = c(
+    if(exists("map_without")) map_without else NA,
+    if(exists("hr_without")) hr_without else NA,
+    if(exists("spo2_without")) spo2_without else NA
+  )
+) %>%
+  pivot_longer(cols = c(With_Violation, Without_Violation),
+               names_to = "Group", values_to = "Mortality") %>%
+  mutate(Group = if_else(Group == "With_Violation", "With Violation", "Without Violation"))
+
+p3 <- ggplot(mortality_data %>% filter(!is.na(Mortality)),
+             aes(x = Threshold, y = Mortality, fill = Group)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  geom_text(aes(label = paste0(round(Mortality, 1), "%")),
+            position = position_dodge(width = 0.7), vjust = -0.5, size = 3.5) +
+  labs(title = "In-Hospital Mortality by Vital Sign Threshold Violations",
+       x = "Threshold",
+       y = "Mortality (%)",
+       fill = "Threshold Status") +
+  theme_minimal() +
+  scale_fill_manual(values = c("#d73027", "#4575b4"))
+
+print(p3)
+
 cat("\n=== ANALYSIS COMPLETE ===\n")
 cat("\n✓ Comparison table: OBS12 vs Agreed PMI categories\n")
 cat("✓ PMI category overviews (noncardiac, cardiac, T2MI)\n")
@@ -1000,6 +1355,9 @@ cat("✓ PMI category KM curves (30d) with 95% CI and adjusted HR\n")
 cat("✓ Surgical specialty analysis with p-values for cardiac vs noncardiac\n")
 cat("✓ T2MI with vs without cause KM curves (30d & 365d)\n")
 cat("✓ Baseline characteristics tables\n")
-cat("✓ **NEW: Surgical specialty p-values integrated into OBS12 and Agreed tables**\n")
+cat("✓ Surgical specialty p-values integrated into OBS12 and Agreed tables\n")
 cat("✓ Cox regression with adjusted HR\n")
 cat("✓ UNIFORM Date from data_included used for all survival calculations\n")
+cat("✓ **NEW: Postoperative vitals analysis with hypotension/tachycardia detection**\n")
+cat("✓ **NEW: In-hospital mortality by vital sign threshold violations**\n")
+cat("✓ **NEW: Mortality tables and bar charts for total cohort and cardiac PMI**\n")
