@@ -437,6 +437,31 @@ obs12_t2mi <- obs12_with_pmi %>%
   mutate(Percentage = round(n/sum(n)*100, 1))
 print(obs12_t2mi)
 
+# ========== IN-HOSPITAL MORTALITY BY PMI AETIOLOGY - OBS12 ==========
+
+cat("\n\n=== IN-HOSPITAL MORTALITY BY PMI AETIOLOGY - OBS12 ===\n\n")
+
+obs12_inhospital_mort_summary <- obs12_with_pmi %>%
+  group_by(PMI_category) %>%
+  summarise(
+    N = n(),
+    Deaths_InHospital = sum(death_in_hospital, na.rm = TRUE),
+    Mortality_InHospital_Pct = round(Deaths_InHospital / N * 100, 1)
+  ) %>%
+  arrange(desc(N))
+
+cat("--- In-Hospital Mortality by PMI Aetiology (OBS12) ---\n")
+print(obs12_inhospital_mort_summary, n = Inf)
+
+cat("\n--- Overall In-Hospital Mortality (OBS12) ---\n")
+overall_inhospital <- obs12_with_pmi %>%
+  summarise(
+    N = n(),
+    Deaths_InHospital = sum(death_in_hospital, na.rm = TRUE),
+    Mortality_InHospital_Pct = round(Deaths_InHospital / N * 100, 1)
+  )
+print(overall_inhospital)
+
 # ========== PMI CATEGORY BREAKDOWN - AGREED CASES ==========
 
 cat("\n\n=== PMI CATEGORY BREAKDOWN - AGREED CASES ===\n\n")
