@@ -1374,50 +1374,76 @@ pmi_causes_chart_data <- obs12_with_pmi %>%
     plot_order = if_else(PMI_category_display == "NA", -1, Percentage)  # NA gets lowest order
   )
 
-# Create bar chart with color coding and mortality information
+# Create dual bar charts: Distribution and Mortality side by side
 # Light blue for Noncardiac (extracardiac), Light red for Cardiac
-# Calculate max percentage to position mortality labels properly
-max_pct <- max(pmi_causes_chart_data$Percentage, na.rm = TRUE)
 
-pmi_causes_plot <- ggplot(pmi_causes_chart_data, aes(x = reorder(PMI_category_display, plot_order),
-                                                       y = Percentage,
-                                                       fill = PMI_type)) +
+# Load gridExtra if not already loaded
+if (!require("gridExtra")) install.packages("gridExtra")
+library(gridExtra)
+library(grid)
+
+# Chart 1: Distribution of PMI aetiologies
+plot1 <- ggplot(pmi_causes_chart_data, aes(x = reorder(PMI_category_display, plot_order),
+                                            y = Percentage,
+                                            fill = PMI_type)) +
   geom_bar(stat = "identity") +
-  scale_fill_manual(values = c("Cardiac" = "#FFB6C1", "Noncardiac" = "#ADD8E6")) +  # Light red and light blue
+  scale_fill_manual(values = c("Cardiac" = "#FFB6C1", "Noncardiac" = "#ADD8E6")) +
   coord_flip() +
   labs(
-    title = "PMI aetiology with In-Hospital Mortality",
-    subtitle = "Distribution and Mortality Rates",
+    title = "Distribution of PMI Aetiologies",
     x = "PMI Category",
     y = "Percentage (%)",
     fill = "PMI Type"
   ) +
   theme_minimal() +
   theme(
-    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
-    plot.subtitle = element_text(hjust = 0.5, size = 12),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 12),
     axis.text.y = element_text(size = 10),
     axis.text.x = element_text(size = 10),
-    legend.position = "bottom",
-    plot.margin = margin(5, 100, 5, 5)  # Add right margin for mortality labels
+    legend.position = "bottom"
   ) +
-  # Extend x-axis to make room for labels
-  scale_y_continuous(expand = expansion(mult = c(0, 0.35))) +
-  # Label with N and percentage (right next to bar)
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
   geom_text(aes(label = paste0("n=", N, " (", Percentage, "%)")),
             hjust = -0.1,
-            size = 3) +
-  # Label with in-hospital mortality (further to the right in separate column)
-  geom_text(aes(label = paste0("Mort: ", Deaths_InHospital, " (", Mortality_InHospital_Pct, "%)")),
-            aes(y = max_pct * 1.15),  # Position at fixed location to the right
-            hjust = 0,
+            size = 3)
+
+# Chart 2: In-hospital mortality by PMI aetiology
+plot2 <- ggplot(mortality_data <- pmi_causes_chart_data,
+                aes(x = reorder(PMI_category_display, plot_order),
+                    y = Mortality_InHospital_Pct,
+                    fill = PMI_type)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("Cardiac" = "#FFB6C1", "Noncardiac" = "#ADD8E6")) +
+  coord_flip() +
+  labs(
+    title = "In-Hospital Mortality by PMI Aetiology",
+    x = "",
+    y = "Mortality (%)",
+    fill = "PMI Type"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 12),
+    axis.text.y = element_blank(),  # Remove y-axis labels (same as plot 1)
+    axis.ticks.y = element_blank(),
+    axis.text.x = element_text(size = 10),
+    legend.position = "bottom"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
+  geom_text(aes(label = paste0(Deaths_InHospital, " (", Mortality_InHospital_Pct, "%)")),
+            hjust = -0.1,
             size = 3,
             color = "darkred",
             fontface = "bold")
 
-# Save the plot
-ggsave("PMI_Causes_BarChart_OBS12.png", plot = pmi_causes_plot, width = 10, height = 8, dpi = 300)
-cat("Bar chart saved as 'PMI_Causes_BarChart_OBS12.png'\n\n")
+# Combine plots side by side
+combined_plot <- grid.arrange(plot1, plot2, ncol = 2,
+                              top = textGrob("PMI Aetiology: Distribution and In-Hospital Mortality (OBS12)",
+                                           gp = gpar(fontsize = 14, fontface = "bold")))
+
+# Save the combined plot
+ggsave("PMI_Distribution_Mortality_OBS12.png", plot = combined_plot, width = 16, height = 8, dpi = 300)
+cat("Combined bar chart saved as 'PMI_Distribution_Mortality_OBS12.png'\n\n")
 
 # Print the data table
 cat("PMI Causes Distribution:\n")
