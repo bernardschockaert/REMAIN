@@ -403,9 +403,12 @@ hemodynamics <- postoperativevitals %>%
 abp_data <- hemodynamics %>%
   filter(code_display_original == "ABP") %>%
   group_by(pseudonym_value, effectiveDateTime) %>%
-  # Take the median value (middle of systolic, MAP, diastolic)
+  arrange(valueQuantity_value) %>%
+  # Take the middle value (position 2 of 3: diastolic, MAP, systolic when sorted)
+  filter(n() >= 3) %>%
+  slice(2) %>%  # Take the 2nd value (middle) after sorting
   summarise(
-    MAP = median(valueQuantity_value, na.rm = TRUE),
+    MAP = valueQuantity_value,
     source = "ABP",
     .groups = "drop"
   ) %>%
@@ -414,8 +417,11 @@ abp_data <- hemodynamics %>%
 nibp_data <- hemodynamics %>%
   filter(code_display_original == "NIBP") %>%
   group_by(pseudonym_value, effectiveDateTime) %>%
+  arrange(valueQuantity_value) %>%
+  filter(n() >= 3) %>%
+  slice(2) %>%  # Take the 2nd value (middle) after sorting
   summarise(
-    MAP = median(valueQuantity_value, na.rm = TRUE),
+    MAP = valueQuantity_value,
     source = "NIBP",
     .groups = "drop"
   ) %>%
