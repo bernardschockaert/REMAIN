@@ -1343,12 +1343,17 @@ print(obs12_mortality_category, n = Inf)
 
 cat("\n--- Creating Bar Chart of PMI Causes (OBS12) ---\n")
 
-# Prepare data for bar chart
+# Prepare data for bar chart with in-hospital mortality
 pmi_causes_chart_data <- obs12_with_pmi %>%
   group_by(PMI_category, PMI_type) %>%
-  summarise(N = n(), .groups = 'drop') %>%
+  summarise(
+    N = n(),
+    Deaths_InHospital = sum(death_in_hospital, na.rm = TRUE),
+    .groups = 'drop'
+  ) %>%
   mutate(
     Percentage = round(N / sum(N) * 100, 1),
+    Mortality_InHospital_Pct = round(Deaths_InHospital / N * 100, 1),
     # Rename PMI categories for cleaner display
     PMI_category_display = case_when(
       PMI_category == "T2MI_with_cause" ~ "T2MI+",
@@ -1369,7 +1374,7 @@ pmi_causes_chart_data <- obs12_with_pmi %>%
     plot_order = if_else(PMI_category_display == "NA", -1, Percentage)  # NA gets lowest order
   )
 
-# Create bar chart with color coding
+# Create bar chart with color coding and mortality information
 # Light blue for Noncardiac (extracardiac), Light red for Cardiac
 pmi_causes_plot <- ggplot(pmi_causes_chart_data, aes(x = reorder(PMI_category_display, plot_order),
                                                        y = Percentage,
@@ -1378,8 +1383,8 @@ pmi_causes_plot <- ggplot(pmi_causes_chart_data, aes(x = reorder(PMI_category_di
   scale_fill_manual(values = c("Cardiac" = "#FFB6C1", "Noncardiac" = "#ADD8E6")) +  # Light red and light blue
   coord_flip() +
   labs(
-    title = "PMI aetiology",
-    subtitle = "Percentage of Total Cases",
+    title = "PMI aetiology with In-Hospital Mortality",
+    subtitle = "Distribution and Mortality Rates",
     x = "PMI Category",
     y = "Percentage (%)",
     fill = "PMI Type"
@@ -1392,9 +1397,17 @@ pmi_causes_plot <- ggplot(pmi_causes_chart_data, aes(x = reorder(PMI_category_di
     axis.text.x = element_text(size = 10),
     legend.position = "bottom"
   ) +
-  geom_text(aes(label = paste0(Percentage, "%")),
+  # Label with N and percentage
+  geom_text(aes(label = paste0("n=", N, " (", Percentage, "%)")),
             hjust = -0.1,
-            size = 3)
+            size = 3) +
+  # Label with in-hospital mortality
+  geom_text(aes(label = paste0("Mort: ", Deaths_InHospital, " (", Mortality_InHospital_Pct, "%)")),
+            hjust = -0.1,
+            nudge_y = -0.8,  # Position below the first label
+            size = 2.5,
+            color = "red",
+            fontface = "italic")
 
 # Save the plot
 ggsave("PMI_Causes_BarChart_OBS12.png", plot = pmi_causes_plot, width = 10, height = 8, dpi = 300)
