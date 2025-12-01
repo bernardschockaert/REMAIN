@@ -403,33 +403,23 @@ hemodynamics <- postoperativevitals %>%
 abp_data <- hemodynamics %>%
   filter(code_display_original == "ABP") %>%
   group_by(pseudonym_value, effectiveDateTime) %>%
-  arrange(valueQuantity_value) %>%
-  # Take the median value (middle of 3: systolic, MAP, diastolic)
+  # Take the median value (middle of systolic, MAP, diastolic)
   summarise(
-    MAP = if(n() >= 3) {
-      sorted_vals <- sort(valueQuantity_value)
-      sorted_vals[ceiling(n()/2)]  # Middle value
-    } else {
-      median(valueQuantity_value, na.rm = TRUE)
-    },
+    MAP = median(valueQuantity_value, na.rm = TRUE),
     source = "ABP",
     .groups = "drop"
-  )
+  ) %>%
+  filter(!is.na(MAP) & is.finite(MAP))
 
 nibp_data <- hemodynamics %>%
   filter(code_display_original == "NIBP") %>%
   group_by(pseudonym_value, effectiveDateTime) %>%
-  arrange(valueQuantity_value) %>%
   summarise(
-    MAP = if(n() >= 3) {
-      sorted_vals <- sort(valueQuantity_value)
-      sorted_vals[ceiling(n()/2)]  # Middle value
-    } else {
-      median(valueQuantity_value, na.rm = TRUE)
-    },
+    MAP = median(valueQuantity_value, na.rm = TRUE),
     source = "NIBP",
     .groups = "drop"
-  )
+  ) %>%
+  filter(!is.na(MAP) & is.finite(MAP))
 
 # Combine: use ABP when available, NIBP only when ABP missing
 bp_data <- abp_data %>%
