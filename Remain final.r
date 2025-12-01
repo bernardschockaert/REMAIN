@@ -1400,7 +1400,7 @@ plot1 <- ggplot(pmi_causes_chart_data, aes(x = reorder(PMI_category_display, plo
     plot.title = element_text(hjust = 0.5, face = "bold", size = 12),
     axis.text.y = element_text(size = 10),
     axis.text.x = element_text(size = 10),
-    legend.position = "bottom"
+    legend.position = "none"  # Remove legend here, will add shared legend below
   ) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
   geom_text(aes(label = paste0(N, " (", Percentage, "%)")),
@@ -1427,17 +1427,41 @@ plot2 <- ggplot(mortality_data <- pmi_causes_chart_data,
     axis.text.y = element_blank(),  # Remove y-axis labels (same as plot 1)
     axis.ticks.y = element_blank(),
     axis.text.x = element_text(size = 10),
-    legend.position = "none"  # Hide legend to avoid duplication
+    legend.position = "none"
   ) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
   geom_text(aes(label = paste0(Deaths_InHospital, " (", Mortality_InHospital_Pct, "%)")),
             hjust = -0.1,
             size = 3)
 
-# Combine plots side by side
-combined_plot <- grid.arrange(plot1, plot2, ncol = 2,
-                              top = textGrob("PMI Aetiology: Distribution and In-Hospital Mortality",
-                                           gp = gpar(fontsize = 14, fontface = "bold")))
+# Create a dummy plot to extract legend
+legend_plot <- ggplot(pmi_causes_chart_data, aes(x = Percentage, y = PMI_category_display, fill = PMI_type)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("Cardiac" = "#FFB6C1", "Noncardiac" = "#ADD8E6")) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  labs(fill = "PMI Type")
+
+# Extract legend
+library(ggplotify)
+get_legend <- function(plot) {
+  tmp <- ggplot_gtable(ggplot_build(plot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  if(length(leg) > 0) return(tmp$grobs[[leg]])
+  return(NULL)
+}
+
+legend <- get_legend(legend_plot)
+
+# Combine plots side by side with shared legend at bottom
+combined_plot <- grid.arrange(
+  arrangeGrob(plot1, plot2, ncol = 2),
+  legend,
+  nrow = 2,
+  heights = c(10, 1),
+  top = textGrob("PMI Aetiology: Distribution and In-Hospital Mortality",
+                 gp = gpar(fontsize = 14, fontface = "bold"))
+)
 
 # Save the combined plot
 ggsave("PMI_Distribution_Mortality_OBS12.png", plot = combined_plot, width = 16, height = 8, dpi = 300)
