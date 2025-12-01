@@ -1697,10 +1697,19 @@ create_vitals_mortality_table <- function(data, threshold_var, threshold_name, c
     return(NULL)
   }
 
-  ct <- table(data_clean[[threshold_var]], data_clean$death_in_hospital)
-
   below <- sum(data_clean[[threshold_var]] == TRUE, na.rm = TRUE)
   above <- sum(data_clean[[threshold_var]] == FALSE, na.rm = TRUE)
+
+  # Check if we have both groups
+  if(below == 0 || above == 0) {
+    cat("Insufficient data: need both threshold violation and no violation groups\n")
+    cat("Threshold violation present (n=", below, ")\n", sep="")
+    cat("No threshold violation (n=", above, ")\n", sep="")
+    return(NULL)
+  }
+
+  ct <- table(data_clean[[threshold_var]], data_clean$death_in_hospital)
+
   mort_below <- sum(data_clean[[threshold_var]] == TRUE & data_clean$death_in_hospital == 1, na.rm = TRUE)
   mort_above <- sum(data_clean[[threshold_var]] == FALSE & data_clean$death_in_hospital == 1, na.rm = TRUE)
 
@@ -1709,30 +1718,45 @@ create_vitals_mortality_table <- function(data, threshold_var, threshold_name, c
   se_below <- if(below > 0) sqrt(pct_mort_below * (100 - pct_mort_below) / below) else NA
   se_above <- if(above > 0) sqrt(pct_mort_above * (100 - pct_mort_above) / above) else NA
 
-  if(min(ct) >= 5) {
-    test <- chisq.test(ct)
-    test_name <- "Chi-square"
-    p_value <- test$p.value
-  } else {
-    test <- fisher.test(ct)
-    test_name <- "Fisher's exact"
-    p_value <- test$p.value
-  }
+  # Statistical test
+  tryCatch({
+    if(min(ct) >= 5) {
+      test <- chisq.test(ct)
+      test_name <- "Chi-square"
+      p_value <- test$p.value
+    } else {
+      test <- fisher.test(ct)
+      test_name <- "Fisher's exact"
+      p_value <- test$p.value
+    }
 
-  cat("Threshold violation present (n=", below, "):\n", sep="")
-  cat("  Deaths: ", mort_below, " (", round(pct_mort_below, 1), "% ± ", round(se_below, 1), " SE)\n", sep="")
-  cat("No threshold violation (n=", above, "):\n", sep="")
-  cat("  Deaths: ", mort_above, " (", round(pct_mort_above, 1), "% ± ", round(se_above, 1), " SE)\n\n", sep="")
-  cat(test_name, " test: p=", format.pval(p_value, digits=3), "\n", sep="")
+    cat("Threshold violation present (n=", below, "):\n", sep="")
+    cat("  Deaths: ", mort_below, " (", round(pct_mort_below, 1), "% ± ", round(se_below, 1), " SE)\n", sep="")
+    cat("No threshold violation (n=", above, "):\n", sep="")
+    cat("  Deaths: ", mort_above, " (", round(pct_mort_above, 1), "% ± ", round(se_above, 1), " SE)\n\n", sep="")
+    cat(test_name, " test: p=", format.pval(p_value, digits=3), "\n", sep="")
+  }, error = function(e) {
+    cat("Statistical test failed: insufficient data\n")
+  })
 
-  # Build formula using as.formula for base R compatibility
-  formula_str <- paste("death_in_hospital ~", threshold_var)
-  model <- glm(as.formula(formula_str), data = data_clean, family = binomial)
-  or <- exp(coef(model)[2])
-  ci <- exp(confint(model)[2,])
-  p_glm <- summary(model)$coefficients[2,4]
-  cat("Odds Ratio: ", round(or, 2), " (95%CI: ", round(ci[1], 2), "-", round(ci[2], 2),
-      "), p=", format.pval(p_glm, digits=3), "\n", sep="")
+  # Logistic regression with error handling
+  tryCatch({
+    formula_str <- paste("death_in_hospital ~", threshold_var)
+    model <- glm(as.formula(formula_str), data = data_clean, family = binomial)
+
+    # Check if model has the expected coefficient
+    if(length(coef(model)) >= 2) {
+      or <- exp(coef(model)[2])
+      ci <- exp(confint(model)[2,])
+      p_glm <- summary(model)$coefficients[2,4]
+      cat("Odds Ratio: ", round(or, 2), " (95%CI: ", round(ci[1], 2), "-", round(ci[2], 2),
+          "), p=", format.pval(p_glm, digits=3), "\n", sep="")
+    } else {
+      cat("Logistic regression: model convergence issues\n")
+    }
+  }, error = function(e) {
+    cat("Logistic regression failed: ", e$message, "\n", sep="")
+  })
 }
 
 # Overall vital sign summary
