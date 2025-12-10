@@ -220,7 +220,8 @@ cat("\n\n=== PROCESSING POSTOPERATIVE VITALS ===\n\n")
 
 # Load hemodynamics data from postoperative vitals
 hemodynamics <- postoperativevitals %>%
-  filter(code_display_original %in% c("ABP", "NIBP", "HR", "SpO2"))
+  filter(code_display_original %in% c("ABP", "NIBP", "HR", "SpO2")) %>%
+  mutate(valueQuantity_value = as.numeric(valueQuantity_value))  # Ensure numeric values
 
 # Extract vital signs - Prioritize ABP over NIBP for blood pressure
 abp_data <- hemodynamics %>%
@@ -263,7 +264,7 @@ patient_hemodynamics <- vital_signs %>%
     any_MAP_below_65 = any(MAP < 65, na.rm = TRUE),
     any_HR_above_120 = any(HR > 120, na.rm = TRUE),
     any_SpO2_below_90 = any(SpO2 < 90, na.rm = TRUE),
-    TWA_hypotension = sum(pmax(65 - MAP, 0), na.rm = TRUE),  # Time-weighted average below 65
+    TWA_hypotension = sum(pmax(65 - MAP[!is.na(MAP)], 0), na.rm = TRUE),  # Time-weighted average below 65
     .groups = "drop"
   )
 
