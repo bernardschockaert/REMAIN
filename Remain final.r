@@ -37,6 +37,8 @@ data <- read_csv2("Z:/REMAIN/Castor exports/REMAIN_ALLOBS_participant_data_csv_2
 coupling <- read_excel("Z:/REMAIN/Mario Stark/Files gebruikt tijdens stage/Castor+pseudonym+date.xlsx")
 demographics <- read_csv("Z:/REMAIN/Data export Datacapture/REMAIN - 2024-06-20 - demografie.csv")
 postoperativevitals <- read.csv("Z:/REMAIN/Data export Datacapture/REMAIN - metingen_postoperatief_20241010.csv")
+opname <- read_csv("Z:/REMAIN/Data export Datacapture/REMAIN - 2024-06-20 - opname")
+lab <- read_csv("Z:/REMAIN/Data export Datacapture/REMAIN - 2024-06-20 - lab")
 
 #Exclude LOTx, centrale lijn, minor eg gastroscopy, tropo incorrect, recent cardiac surgery/intervention, organ donation and old/insufficient file
 exclude_ids <- c(110014,110015,110083,110096,110279,110287,110300,110306,110308,110368,110376,110416,110470,110719,110930,110941,110951,110981,111009,110100,110148,110159,110289,110318,110347,110349,110352,110379,110567,110609,110694,110752,110908,111049,110162,110166,110210,110248,110398,110445,110487,110577,110614,110627,110635,110707,110743,110827,110864,110873,110891,110914,110995,110028,110033,110051,110067,110068,110099,110114,110117,110126,110131,110143,110160,110183,110187,110198,110205,110214,110221,110222,110225,110230,110238,110251,110261,110270,110330,110343,110357,110378,110382,110399,110408,110418,110431,110432,110443,110451,110455,110456,110458,110476,110491,110515,110521,110544,110550,110553,110573,110586,110588,110608,110644,110669,110686,110722,110726,110747,110753,110765,110774,110776,110783,110789,110841,110876,110878,110879,110884,110899,110911,110920,110922,110931,110933,110943,110948,110953,110970,110973,110983,110985,110987,110993,110998,111001,111005,111011,111012,111014,111026,111030,111032,111034,111038,111053,111055,111056,111064,111070,111075,111076,111082,111087,111097
@@ -300,6 +302,40 @@ cat("  MAP < 65 mmHg:", round(vitals_summary$MAP_below_65, 1), "%\n")
 cat("  HR > 120 bpm:", round(vitals_summary$HR_above_120, 1), "%\n")
 cat("  SpO2 < 90%:", round(vitals_summary$SpO2_below_90, 1), "%\n\n")
 
+# ========== FIRST hsTnT VALUE AND LOCATION COUPLING ==========
+
+cat("\n\n=== COUPLING FIRST hsTnT VALUES WITH LOCATION ===\n\n")
+
+# Get first hsTnT measurement per patient
+first_hstnt <- lab %>%
+  filter(!is.na(valueQuantity_value)) %>%
+  arrange(pseudonym_value, collection_collectedDateTime) %>%
+  group_by(pseudonym_value) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(pseudonym_value,
+         first_hstnt_value = valueQuantity_value,
+         first_hstnt_datetime = collection_collectedDateTime)
+
+# Get admission location information
+admission_location <- opname %>%
+  select(pseudonym_value, specialty_display_original, opnamedeel_afdeling)
+
+# Couple first hsTnT with location and merge with obs12_with_pmi
+hstnt_location <- first_hstnt %>%
+  left_join(admission_location, by = "pseudonym_value")
+
+obs12_with_pmi <- obs12_with_pmi %>%
+  left_join(hstnt_location, by = c("Pseudonym" = "pseudonym_value"))
+
+agreed_survival <- agreed_survival %>%
+  left_join(hstnt_location, by = c("Pseudonym" = "pseudonym_value"))
+
+cat("First hsTnT values coupled with location data\n")
+cat("Patients with hsTnT data:", sum(!is.na(obs12_with_pmi$first_hstnt_value)), "\n")
+cat("Patients with specialty data:", sum(!is.na(obs12_with_pmi$specialty_display_original)), "\n")
+cat("Patients with ward data:", sum(!is.na(obs12_with_pmi$opnamedeel_afdeling)), "\n\n")
+
 # ========== PMI CATEGORY BREAKDOWN - OBS12 ==========
 
 cat("\n\n=== PMI CATEGORY BREAKDOWN - OBS12 ===\n\n")
@@ -502,250 +538,6 @@ print(obs12_specialty_results)
 cat("\n--- Cardiac vs Noncardiac Distribution by Surgical Specialty (Agreed Cases) ---\n")
 agreed_specialty_results <- compute_specialty_pvalue(agreed_survival)
 print(agreed_specialty_results)
-
-# ========== PMI CATEGORY K-M CURVES (30-DAY) ==========
-
-cat("\n\n=== KAPLAN-MEIER CURVES: PMI CATEGORIES (30-day) ===\n\n")
-
-# OBS12 - 30-day survival by PMI category
-cat("--- 30-Day Survival by PMI Category (OBS12) ---\n")
-
-obs12_pmi_cat_summary <- obs12_with_pmi %>%
-  group_by(PMI_category) %>%
-  summarise(
-    N = n(),
-    Deaths_30d = sum(death_30d, na.rm = TRUE),
-    Mortality_30d = round(Deaths_30d / N * 100, 1)
-  ) %>%
-  arrange(desc(N))
-
-print(obs12_pmi_cat_summary)
-
-# Filter categories with sufficient sample size (≥5 patients)
-obs12_pmi_for_km <- obs12_with_pmi %>%
-  group_by(PMI_category) %>%
-  filter(n() >= 5) %>%
-  ungroup()
-
-cat("\nCategories included in 30-day KM curve (n≥5):", 
-    length(unique(obs12_pmi_for_km$PMI_category)), "\n")
-cat("Total patients in KM analysis:", nrow(obs12_pmi_for_km), "\n\n")
-
-if(nrow(obs12_pmi_for_km) > 0) {
-  surv_obj_30d_cat_obs12 <- Surv(time = obs12_pmi_for_km$survival_time_30d, 
-                                  event = obs12_pmi_for_km$death_30d)
-  fit_30d_cat_obs12 <- survfit(surv_obj_30d_cat_obs12 ~ PMI_category, data = obs12_pmi_for_km)
-  survdiff_30d_cat_obs12 <- survdiff(surv_obj_30d_cat_obs12 ~ PMI_category, data = obs12_pmi_for_km)
-  
-  pval_label_30d_cat_obs12 <- paste0("Log-rank p = ", 
-                                     format.pval(survdiff_30d_cat_obs12$pvalue, digits = 3))
-  
-  ggsurvplot(
-    fit_30d_cat_obs12,
-    data = obs12_pmi_for_km,
-    risk.table = TRUE,
-    pval = pval_label_30d_cat_obs12,
-    conf.int = TRUE,
-    xlim = c(0, 30),
-    xlab = "Time (days)",
-    ylab = "Survival probability",
-    title = "30-Day Survival by PMI Category (OBS12)",
-    legend.title = "PMI Category",
-    break.time.by = 5,
-    palette = "jco"
-  )
-}
-
-# Agreed cases - 30-day survival by PMI category
-cat("\n--- 30-Day Survival by PMI Category (Agreed Cases) ---\n")
-
-agreed_pmi_cat_summary <- agreed_survival %>%
-  group_by(PMI_category) %>%
-  summarise(
-    N = n(),
-    Deaths_30d = sum(death_30d, na.rm = TRUE),
-    Mortality_30d = round(Deaths_30d / N * 100, 1)
-  ) %>%
-  arrange(desc(N))
-
-print(agreed_pmi_cat_summary)
-
-# Filter categories with sufficient sample size (≥5 patients)
-agreed_pmi_for_km <- agreed_survival %>%
-  group_by(PMI_category) %>%
-  filter(n() >= 5) %>%
-  ungroup()
-
-cat("\nCategories included in 30-day KM curve (n≥5):", 
-    length(unique(agreed_pmi_for_km$PMI_category)), "\n")
-cat("Total patients in KM analysis:", nrow(agreed_pmi_for_km), "\n\n")
-
-if(nrow(agreed_pmi_for_km) > 0) {
-  surv_obj_30d_cat_agreed <- Surv(time = agreed_pmi_for_km$survival_time_30d, 
-                                   event = agreed_pmi_for_km$death_30d)
-  fit_30d_cat_agreed <- survfit(surv_obj_30d_cat_agreed ~ PMI_category, data = agreed_pmi_for_km)
-  survdiff_30d_cat_agreed <- survdiff(surv_obj_30d_cat_agreed ~ PMI_category, data = agreed_pmi_for_km)
-  
-  pval_label_30d_cat_agreed <- paste0("Log-rank p = ", 
-                                      format.pval(survdiff_30d_cat_agreed$pvalue, digits = 3))
-  
-  ggsurvplot(
-    fit_30d_cat_agreed,
-    data = agreed_pmi_for_km,
-    risk.table = TRUE,
-    pval = pval_label_30d_cat_agreed,
-    conf.int = TRUE,
-    xlim = c(0, 30),
-    xlab = "Time (days)",
-    ylab = "Survival probability",
-    title = "30-Day Survival by PMI Category (Agreed Cases)",
-    legend.title = "PMI Category",
-    break.time.by = 5,
-    palette = "jco"
-  )
-}
-
-# ========== T2MI KAPLAN-MEIER CURVES ==========
-
-cat("\n\n=== KAPLAN-MEIER CURVES: T2MI WITH vs WITHOUT CAUSE ===\n\n")
-
-# Prepare T2MI data for OBS12
-obs12_t2mi_data <- obs12_with_pmi %>%
-  filter(PMI_category %in% c("T2MI_with_cause", "T2MI_without_cause")) %>%
-  mutate(T2MI_group = factor(PMI_category, 
-                             levels = c("T2MI_with_cause", "T2MI_without_cause"),
-                             labels = c("T2MI with cause", "T2MI without cause")))
-
-# Prepare T2MI data for agreed cases
-agreed_t2mi_data <- agreed_survival %>%
-  filter(PMI_category %in% c("T2MI_with_cause", "T2MI_without_cause")) %>%
-  mutate(T2MI_group = factor(PMI_category, 
-                             levels = c("T2MI_with_cause", "T2MI_without_cause"),
-                             labels = c("T2MI with cause", "T2MI without cause")))
-
-cat("--- Number of T2MI patients (OBS12) ---\n")
-cat("T2MI with cause:", sum(obs12_t2mi_data$T2MI_group == "T2MI with cause"), "\n")
-cat("T2MI without cause:", sum(obs12_t2mi_data$T2MI_group == "T2MI without cause"), "\n\n")
-
-cat("--- Number of T2MI patients (Agreed Cases) ---\n")
-cat("T2MI with cause:", sum(agreed_t2mi_data$T2MI_group == "T2MI with cause"), "\n")
-cat("T2MI without cause:", sum(agreed_t2mi_data$T2MI_group == "T2MI without cause"), "\n\n")
-
-# OBS12 - 30-day survival for T2MI
-if(nrow(obs12_t2mi_data) >= 5) {
-  cat("\n--- 30-Day Survival: T2MI with vs without cause (OBS12) ---\n")
-  surv_obj_30d_t2mi_obs12 <- Surv(time = obs12_t2mi_data$survival_time_30d, 
-                                  event = obs12_t2mi_data$death_30d)
-  fit_30d_t2mi_obs12 <- survfit(surv_obj_30d_t2mi_obs12 ~ T2MI_group, data = obs12_t2mi_data)
-  survdiff_30d_t2mi_obs12 <- survdiff(surv_obj_30d_t2mi_obs12 ~ T2MI_group, data = obs12_t2mi_data)
-  
-  pval_label_30d_t2mi_obs12 <- paste0("Log-rank p = ", format.pval(survdiff_30d_t2mi_obs12$pvalue, digits = 3))
-  
-  ggsurvplot(
-    fit_30d_t2mi_obs12,
-    data = obs12_t2mi_data,
-    risk.table = TRUE,
-    pval = pval_label_30d_t2mi_obs12,
-    conf.int = TRUE,
-    xlim = c(0, 30),
-    xlab = "Time (days)",
-    ylab = "Survival probability",
-    title = "30-Day Survival: T2MI with vs without Cause (OBS12)",
-    legend.title = "T2MI Type",
-    legend.labs = c("T2MI with cause", "T2MI without cause"),
-    break.time.by = 5,
-    palette = c("#FC4E07", "#00AFBB")
-  )
-} else {
-  cat("Insufficient T2MI cases in OBS12 for 30-day survival analysis\n")
-}
-
-# OBS12 - 365-day survival for T2MI
-if(nrow(obs12_t2mi_data) >= 5) {
-  cat("\n--- 365-Day Survival: T2MI with vs without cause (OBS12) ---\n")
-  surv_obj_365d_t2mi_obs12 <- Surv(time = obs12_t2mi_data$survival_time_365d, 
-                                   event = obs12_t2mi_data$death_365d)
-  fit_365d_t2mi_obs12 <- survfit(surv_obj_365d_t2mi_obs12 ~ T2MI_group, data = obs12_t2mi_data)
-  survdiff_365d_t2mi_obs12 <- survdiff(surv_obj_365d_t2mi_obs12 ~ T2MI_group, data = obs12_t2mi_data)
-  
-  pval_label_365d_t2mi_obs12 <- paste0("Log-rank p = ", format.pval(survdiff_365d_t2mi_obs12$pvalue, digits = 3))
-  
-  ggsurvplot(
-    fit_365d_t2mi_obs12,
-    data = obs12_t2mi_data,
-    risk.table = TRUE,
-    pval = pval_label_365d_t2mi_obs12,
-    conf.int = TRUE,
-    xlim = c(0, 365),
-    xlab = "Time (days)",
-    ylab = "Survival probability",
-    title = "365-Day Survival: T2MI with vs without Cause (OBS12)",
-    legend.title = "T2MI Type",
-    legend.labs = c("T2MI with cause", "T2MI without cause"),
-    break.time.by = 60,
-    palette = c("#FC4E07", "#00AFBB")
-  )
-} else {
-  cat("Insufficient T2MI cases in OBS12 for 365-day survival analysis\n")
-}
-
-# Agreed cases - 30-day survival for T2MI
-if(nrow(agreed_t2mi_data) >= 5) {
-  cat("\n--- 30-Day Survival: T2MI with vs without cause (Agreed Cases) ---\n")
-  surv_obj_30d_t2mi_agreed <- Surv(time = agreed_t2mi_data$survival_time_30d, 
-                                   event = agreed_t2mi_data$death_30d)
-  fit_30d_t2mi_agreed <- survfit(surv_obj_30d_t2mi_agreed ~ T2MI_group, data = agreed_t2mi_data)
-  survdiff_30d_t2mi_agreed <- survdiff(surv_obj_30d_t2mi_agreed ~ T2MI_group, data = agreed_t2mi_data)
-  
-  pval_label_30d_t2mi_agreed <- paste0("Log-rank p = ", format.pval(survdiff_30d_t2mi_agreed$pvalue, digits = 3))
-  
-  ggsurvplot(
-    fit_30d_t2mi_agreed,
-    data = agreed_t2mi_data,
-    risk.table = TRUE,
-    pval = pval_label_30d_t2mi_agreed,
-    conf.int = TRUE,
-    xlim = c(0, 30),
-    xlab = "Time (days)",
-    ylab = "Survival probability",
-    title = "30-Day Survival: T2MI with vs without Cause (Agreed Cases)",
-    legend.title = "T2MI Type",
-    legend.labs = c("T2MI with cause", "T2MI without cause"),
-    break.time.by = 5,
-    palette = c("#FC4E07", "#00AFBB")
-  )
-} else {
-  cat("Insufficient T2MI cases in Agreed Cases for 30-day survival analysis\n")
-}
-
-# Agreed cases - 365-day survival for T2MI
-if(nrow(agreed_t2mi_data) >= 5) {
-  cat("\n--- 365-Day Survival: T2MI with vs without cause (Agreed Cases) ---\n")
-  surv_obj_365d_t2mi_agreed <- Surv(time = agreed_t2mi_data$survival_time_365d, 
-                                    event = agreed_t2mi_data$death_365d)
-  fit_365d_t2mi_agreed <- survfit(surv_obj_365d_t2mi_agreed ~ T2MI_group, data = agreed_t2mi_data)
-  survdiff_365d_t2mi_agreed <- survdiff(surv_obj_365d_t2mi_agreed ~ T2MI_group, data = agreed_t2mi_data)
-  
-  pval_label_365d_t2mi_agreed <- paste0("Log-rank p = ", format.pval(survdiff_365d_t2mi_agreed$pvalue, digits = 3))
-  
-  ggsurvplot(
-    fit_365d_t2mi_agreed,
-    data = agreed_t2mi_data,
-    risk.table = TRUE,
-    pval = pval_label_365d_t2mi_agreed,
-    conf.int = TRUE,
-    xlim = c(0, 365),
-    xlab = "Time (days)",
-    ylab = "Survival probability",
-    title = "365-Day Survival: T2MI with vs without Cause (Agreed Cases)",
-    legend.title = "T2MI Type",
-    legend.labs = c("T2MI with cause", "T2MI without cause"),
-    break.time.by = 60,
-    palette = c("#FC4E07", "#00AFBB")
-  )
-} else {
-  cat("Insufficient T2MI cases in Agreed Cases for 365-day survival analysis\n")
-}
 
 # ========== SHAPIRO-WILK NORMALITY TESTS ==========
 
@@ -958,130 +750,6 @@ hr_table <- bind_rows(
 
 cat("\n=== HAZARD RATIOS: Noncardiac vs Cardiac ===\n")
 print(hr_table)
-
-# ========== KAPLAN-MEIER CURVES: CARDIAC vs NONCARDIAC WITH ADJUSTED HR ==========
-
-cat("\n\n=== KAPLAN-MEIER CURVES: CARDIAC vs NONCARDIAC (with Adjusted HR) ===\n\n")
-
-# OBS12 - 30-day survival
-cat("--- 30-Day Survival: Cardiac vs Noncardiac (OBS12) ---\n")
-surv_obj_30d_obs12 <- Surv(time = obs12_with_pmi$survival_time_30d, 
-                            event = obs12_with_pmi$death_30d)
-fit_30d_obs12 <- survfit(surv_obj_30d_obs12 ~ PMI_type, data = obs12_with_pmi)
-survdiff_30d_obs12 <- survdiff(surv_obj_30d_obs12 ~ PMI_type, data = obs12_with_pmi)
-
-pval_label_30d_obs12 <- paste0(
-  "Log-rank p = ", format.pval(survdiff_30d_obs12$pvalue, digits = 3),
-  "\nAdjusted HR = ", round(hr_30d_obs12_adj, 2),
-  " (95% CI: ", round(ci_30d_obs12_adj[1], 2), "-", round(ci_30d_obs12_adj[2], 2), ")",
-  "\nAdjusted p = ", format.pval(p_30d_obs12_adj, digits = 3)
-)
-
-ggsurvplot(
-  fit_30d_obs12,
-  data = obs12_with_pmi,
-  risk.table = TRUE,
-  pval = pval_label_30d_obs12,
-  conf.int = TRUE,
-  xlim = c(0, 30),
-  xlab = "Time (days)",
-  ylab = "Survival probability",
-  title = "30-Day Survival: Cardiac vs Noncardiac PMI (OBS12)",
-  legend.title = "PMI Type",
-  legend.labs = c("Cardiac", "Noncardiac"),
-  break.time.by = 5,
-  palette = c("#E7B800", "#2E9FDF")
-)
-
-# OBS12 - 365-day survival
-cat("\n--- 365-Day Survival: Cardiac vs Noncardiac (OBS12) ---\n")
-surv_obj_365d_obs12 <- Surv(time = obs12_with_pmi$survival_time_365d, 
-                             event = obs12_with_pmi$death_365d)
-fit_365d_obs12 <- survfit(surv_obj_365d_obs12 ~ PMI_type, data = obs12_with_pmi)
-survdiff_365d_obs12 <- survdiff(surv_obj_365d_obs12 ~ PMI_type, data = obs12_with_pmi)
-
-pval_label_365d_obs12 <- paste0(
-  "Log-rank p = ", format.pval(survdiff_365d_obs12$pvalue, digits = 3),
-  "\nAdjusted HR = ", round(hr_365d_obs12_adj, 2),
-  " (95% CI: ", round(ci_365d_obs12_adj[1], 2), "-", round(ci_365d_obs12_adj[2], 2), ")",
-  "\nAdjusted p = ", format.pval(p_365d_obs12_adj, digits = 3)
-)
-
-ggsurvplot(
-  fit_365d_obs12,
-  data = obs12_with_pmi,
-  risk.table = TRUE,
-  pval = pval_label_365d_obs12,
-  conf.int = TRUE,
-  xlim = c(0, 365),
-  xlab = "Time (days)",
-  ylab = "Survival probability",
-  title = "365-Day Survival: Cardiac vs Noncardiac PMI (OBS12)",
-  legend.title = "PMI Type",
-  legend.labs = c("Cardiac", "Noncardiac"),
-  break.time.by = 60,
-  palette = c("#E7B800", "#2E9FDF")
-)
-
-# Agreed cases - 30-day survival
-cat("\n--- 30-Day Survival: Cardiac vs Noncardiac (Agreed Cases) ---\n")
-surv_obj_30d_agreed <- Surv(time = agreed_survival$survival_time_30d, 
-                             event = agreed_survival$death_30d)
-fit_30d_agreed <- survfit(surv_obj_30d_agreed ~ PMI_type, data = agreed_survival)
-survdiff_30d_agreed <- survdiff(surv_obj_30d_agreed ~ PMI_type, data = agreed_survival)
-
-pval_label_30d_agreed <- paste0(
-  "Log-rank p = ", format.pval(survdiff_30d_agreed$pvalue, digits = 3),
-  "\nAdjusted HR = ", round(hr_30d_agreed_adj, 2),
-  " (95% CI: ", round(ci_30d_agreed_adj[1], 2), "-", round(ci_30d_agreed_adj[2], 2), ")",
-  "\nAdjusted p = ", format.pval(p_30d_agreed_adj, digits = 3)
-)
-
-ggsurvplot(
-  fit_30d_agreed,
-  data = agreed_survival,
-  risk.table = TRUE,
-  pval = pval_label_30d_agreed,
-  conf.int = TRUE,
-  xlim = c(0, 30),
-  xlab = "Time (days)",
-  ylab = "Survival probability",
-  title = "30-Day Survival: Cardiac vs Noncardiac PMI (Agreed Cases)",
-  legend.title = "PMI Type",
-  legend.labs = c("Cardiac", "Noncardiac"),
-  break.time.by = 5,
-  palette = c("#E7B800", "#2E9FDF")
-)
-
-# Agreed cases - 365-day survival
-cat("\n--- 365-Day Survival: Cardiac vs Noncardiac (Agreed Cases) ---\n")
-surv_obj_365d_agreed <- Surv(time = agreed_survival$survival_time_365d, 
-                              event = agreed_survival$death_365d)
-fit_365d_agreed <- survfit(surv_obj_365d_agreed ~ PMI_type, data = agreed_survival)
-survdiff_365d_agreed <- survdiff(surv_obj_365d_agreed ~ PMI_type, data = agreed_survival)
-
-pval_label_365d_agreed <- paste0(
-  "Log-rank p = ", format.pval(survdiff_365d_agreed$pvalue, digits = 3),
-  "\nAdjusted HR = ", round(hr_365d_agreed_adj, 2),
-  " (95% CI: ", round(ci_365d_agreed_adj[1], 2), "-", round(ci_365d_agreed_adj[2], 2), ")",
-  "\nAdjusted p = ", format.pval(p_365d_agreed_adj, digits = 3)
-)
-
-ggsurvplot(
-  fit_365d_agreed,
-  data = agreed_survival,
-  risk.table = TRUE,
-  pval = pval_label_365d_agreed,
-  conf.int = TRUE,
-  xlim = c(0, 365),
-  xlab = "Time (days)",
-  ylab = "Survival probability",
-  title = "365-Day Survival: Cardiac vs Noncardiac PMI (Agreed Cases)",
-  legend.title = "PMI Type",
-  legend.labs = c("Cardiac", "Noncardiac"),
-  break.time.by = 60,
-  palette = c("#E7B800", "#2E9FDF")
-)
 
 # ========== POSTOPERATIVE VITALS: MORTALITY ANALYSIS ==========
 
@@ -1348,17 +1016,139 @@ p3 <- ggplot(mortality_data %>% filter(!is.na(Mortality)),
 
 print(p3)
 
+# Bar chart 4: Cardiac vs Noncardiac PMI with In-Hospital Mortality
+cat("\n--- Creating Cardiac vs Noncardiac PMI Mortality Bar Charts ---\n")
+
+# Calculate mortality by PMI type
+pmi_mortality_summary <- obs12_with_pmi %>%
+  group_by(PMI_type) %>%
+  summarise(
+    N = n(),
+    Deaths = sum(death_in_hospital, na.rm = TRUE),
+    Mortality_pct = round(Deaths / N * 100, 1),
+    .groups = "drop"
+  )
+
+# Bar chart for mortality by PMI type
+p4 <- ggplot(pmi_mortality_summary, aes(x = PMI_type, y = Mortality_pct, fill = PMI_type)) +
+  geom_bar(stat = "identity", width = 0.6) +
+  geom_text(aes(label = paste0(round(Mortality_pct, 1), "%\n(", Deaths, "/", N, ")")),
+            vjust = -0.5, size = 4) +
+  scale_fill_manual(values = c("Cardiac" = "#E64B35", "Noncardiac" = "#4DBBD5")) +
+  labs(title = "In-Hospital Mortality by PMI Aetiology",
+       subtitle = "Cardiac vs Noncardiac PMI",
+       x = "PMI Type",
+       y = "Mortality (%)") +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  ylim(0, max(pmi_mortality_summary$Mortality_pct) * 1.2)
+
+print(p4)
+
+# Bar chart 5: Combined threshold violations and mortality by PMI type
+# Prepare data for combined visualization
+pmi_threshold_mortality <- obs12_with_pmi %>%
+  group_by(PMI_type) %>%
+  summarise(
+    MAP_below_65_pct = sum(any_MAP_below_65 == TRUE, na.rm = TRUE) / n() * 100,
+    HR_above_120_pct = sum(any_HR_above_120 == TRUE, na.rm = TRUE) / n() * 100,
+    Mortality_pct = sum(death_in_hospital == 1, na.rm = TRUE) / n() * 100,
+    .groups = "drop"
+  ) %>%
+  pivot_longer(cols = c(MAP_below_65_pct, HR_above_120_pct, Mortality_pct),
+               names_to = "Metric", values_to = "Percentage") %>%
+  mutate(Metric = case_when(
+    Metric == "MAP_below_65_pct" ~ "Hypotension (MAP<65)",
+    Metric == "HR_above_120_pct" ~ "Tachycardia (HR>120)",
+    Metric == "Mortality_pct" ~ "In-Hospital Mortality"
+  ))
+
+p5 <- ggplot(pmi_threshold_mortality, aes(x = Metric, y = Percentage, fill = PMI_type)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  geom_text(aes(label = paste0(round(Percentage, 1), "%")),
+            position = position_dodge(width = 0.7), vjust = -0.5, size = 3.5) +
+  scale_fill_manual(values = c("Cardiac" = "#E64B35", "Noncardiac" = "#4DBBD5")) +
+  labs(title = "Vital Sign Thresholds and Mortality by PMI Aetiology",
+       subtitle = "Cardiac vs Noncardiac PMI",
+       x = "",
+       y = "Percentage (%)",
+       fill = "PMI Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 15, hjust = 1))
+
+print(p5)
+
+# Bar chart 6: Mortality stratified by PMI type AND threshold violations
+cardiac_mort_by_threshold <- obs12_with_pmi %>%
+  filter(PMI_type == "Cardiac") %>%
+  summarise(
+    MAP_with = sum(any_MAP_below_65 == TRUE & death_in_hospital == 1, na.rm = TRUE) /
+               sum(any_MAP_below_65 == TRUE, na.rm = TRUE) * 100,
+    MAP_without = sum(any_MAP_below_65 == FALSE & death_in_hospital == 1, na.rm = TRUE) /
+                  sum(any_MAP_below_65 == FALSE, na.rm = TRUE) * 100,
+    HR_with = sum(any_HR_above_120 == TRUE & death_in_hospital == 1, na.rm = TRUE) /
+              sum(any_HR_above_120 == TRUE, na.rm = TRUE) * 100,
+    HR_without = sum(any_HR_above_120 == FALSE & death_in_hospital == 1, na.rm = TRUE) /
+                 sum(any_HR_above_120 == FALSE, na.rm = TRUE) * 100
+  )
+
+noncardiac_mort_by_threshold <- obs12_with_pmi %>%
+  filter(PMI_type == "Noncardiac") %>%
+  summarise(
+    MAP_with = sum(any_MAP_below_65 == TRUE & death_in_hospital == 1, na.rm = TRUE) /
+               sum(any_MAP_below_65 == TRUE, na.rm = TRUE) * 100,
+    MAP_without = sum(any_MAP_below_65 == FALSE & death_in_hospital == 1, na.rm = TRUE) /
+                  sum(any_MAP_below_65 == FALSE, na.rm = TRUE) * 100,
+    HR_with = sum(any_HR_above_120 == TRUE & death_in_hospital == 1, na.rm = TRUE) /
+              sum(any_HR_above_120 == TRUE, na.rm = TRUE) * 100,
+    HR_without = sum(any_HR_above_120 == FALSE & death_in_hospital == 1, na.rm = TRUE) /
+                 sum(any_HR_above_120 == FALSE, na.rm = TRUE) * 100
+  )
+
+stratified_mort_data <- data.frame(
+  PMI_type = rep(c("Cardiac", "Noncardiac"), each = 4),
+  Threshold = rep(c("MAP<65", "MAP≥65", "HR>120", "HR≤120"), 2),
+  Mortality = c(
+    cardiac_mort_by_threshold$MAP_with,
+    cardiac_mort_by_threshold$MAP_without,
+    cardiac_mort_by_threshold$HR_with,
+    cardiac_mort_by_threshold$HR_without,
+    noncardiac_mort_by_threshold$MAP_with,
+    noncardiac_mort_by_threshold$MAP_without,
+    noncardiac_mort_by_threshold$HR_with,
+    noncardiac_mort_by_threshold$HR_without
+  )
+) %>%
+  filter(!is.na(Mortality) & !is.infinite(Mortality))
+
+p6 <- ggplot(stratified_mort_data, aes(x = Threshold, y = Mortality, fill = PMI_type)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  geom_text(aes(label = paste0(round(Mortality, 1), "%")),
+            position = position_dodge(width = 0.7), vjust = -0.5, size = 3) +
+  scale_fill_manual(values = c("Cardiac" = "#E64B35", "Noncardiac" = "#4DBBD5")) +
+  labs(title = "Mortality by PMI Type and Vital Sign Thresholds",
+       subtitle = "Stratified Analysis",
+       x = "Threshold Category",
+       y = "Mortality (%)",
+       fill = "PMI Type") +
+  theme_minimal()
+
+print(p6)
+
 cat("\n=== ANALYSIS COMPLETE ===\n")
 cat("\n✓ Comparison table: OBS12 vs Agreed PMI categories\n")
 cat("✓ PMI category overviews (noncardiac, cardiac, T2MI)\n")
-cat("✓ Cardiac vs Noncardiac KM curves (30d & 365d) with adjusted HR\n")
-cat("✓ PMI category KM curves (30d) with 95% CI and adjusted HR\n")
 cat("✓ Surgical specialty analysis with p-values for cardiac vs noncardiac\n")
-cat("✓ T2MI with vs without cause KM curves (30d & 365d)\n")
 cat("✓ Baseline characteristics tables\n")
 cat("✓ Surgical specialty p-values integrated into OBS12 and Agreed tables\n")
 cat("✓ Cox regression with adjusted HR\n")
 cat("✓ UNIFORM Date from data_included used for all survival calculations\n")
-cat("✓ **NEW: Postoperative vitals analysis with hypotension/tachycardia detection**\n")
-cat("✓ **NEW: In-hospital mortality by vital sign threshold violations**\n")
-cat("✓ **NEW: Mortality tables and bar charts for total cohort and cardiac PMI**\n")
+cat("✓ Postoperative vitals analysis with hypotension/tachycardia detection\n")
+cat("✓ In-hospital mortality by vital sign threshold violations\n")
+cat("✓ Mortality tables for total cohort and cardiac PMI subgroup\n")
+cat("✓ **NEW: First hsTnT value coupled with admission location (specialty & ward)**\n")
+cat("✓ **NEW: Enhanced bar charts with cardiac vs noncardiac colors (#E64B35 & #4DBBD5)**\n")
+cat("✓ **NEW: Mortality by PMI aetiology bar charts**\n")
+cat("✓ **NEW: Combined vitals thresholds and mortality visualization**\n")
+cat("✓ **NEW: Stratified mortality analysis by PMI type and thresholds**\n")
+cat("✓ Kaplan-Meier curves removed as requested\n")
