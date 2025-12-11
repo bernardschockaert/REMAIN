@@ -331,10 +331,45 @@ obs12_with_pmi <- obs12_with_pmi %>%
 agreed_survival <- agreed_survival %>%
   left_join(hstnt_location, by = c("Pseudonym" = "pseudonym_value"))
 
-cat("First hsTnT values coupled with location data\n")
+cat("First hsTnT values coupled with admission location data\n")
+cat("NOTE: 'specialty_display_original' = admission specialty\n")
+cat("      'opnamedeel_afdeling' = admission ward/department\n\n")
 cat("Patients with hsTnT data:", sum(!is.na(obs12_with_pmi$first_hstnt_value)), "\n")
 cat("Patients with specialty data:", sum(!is.na(obs12_with_pmi$specialty_display_original)), "\n")
 cat("Patients with ward data:", sum(!is.na(obs12_with_pmi$opnamedeel_afdeling)), "\n\n")
+
+# Summary of first hsTnT by admission specialty
+cat("--- First hsTnT Values by Admission Specialty ---\n")
+hstnt_by_specialty <- obs12_with_pmi %>%
+  filter(!is.na(first_hstnt_value)) %>%
+  group_by(specialty_display_original) %>%
+  summarise(
+    N = n(),
+    Mean_hsTnT = round(mean(first_hstnt_value, na.rm = TRUE), 1),
+    Median_hsTnT = round(median(first_hstnt_value, na.rm = TRUE), 1),
+    SD_hsTnT = round(sd(first_hstnt_value, na.rm = TRUE), 1),
+    Min_hsTnT = round(min(first_hstnt_value, na.rm = TRUE), 1),
+    Max_hsTnT = round(max(first_hstnt_value, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(N))
+
+print(hstnt_by_specialty, n = Inf)
+
+cat("\n--- First hsTnT Values by Admission Ward ---\n")
+hstnt_by_ward <- obs12_with_pmi %>%
+  filter(!is.na(first_hstnt_value)) %>%
+  group_by(opnamedeel_afdeling) %>%
+  summarise(
+    N = n(),
+    Mean_hsTnT = round(mean(first_hstnt_value, na.rm = TRUE), 1),
+    Median_hsTnT = round(median(first_hstnt_value, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(N))
+
+print(hstnt_by_ward, n = Inf)
+cat("\n")
 
 # ========== PMI CATEGORY BREAKDOWN - OBS12 ==========
 
