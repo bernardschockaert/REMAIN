@@ -1218,6 +1218,7 @@ cat("\n--- Creating Bar Chart of PMI Causes (OBS12) ---\n")
 
 # Prepare data for bar chart with in-hospital mortality
 pmi_causes_chart_data <- obs12_with_pmi %>%
+  filter(!is.na(PMI_category)) %>%  # Exclude NA PMI categories
   group_by(PMI_category, PMI_type) %>%
   summarise(
     N = n(),
@@ -1237,15 +1238,10 @@ pmi_causes_chart_data <- obs12_with_pmi %>%
       PMI_category == "sepsis" ~ "Sepsis",
       PMI_category == "tachy" ~ "Tachyarrhythmia",
       PMI_category == "ex_car_other" ~ "Other",
-      is.na(PMI_category) ~ "NA",
       TRUE ~ as.character(PMI_category)
     )
   ) %>%
-  arrange(desc(Percentage)) %>%
-  # Reorder: NA should be at bottom (least common), so reverse the percentage order for plotting
-  mutate(
-    plot_order = if_else(PMI_category_display == "NA", -1, Percentage)  # NA gets lowest order
-  )
+  arrange(desc(Percentage))
 
 # Create dual bar charts: Distribution and Mortality side by side
 # Light blue for Noncardiac (extracardiac), Light red for Cardiac
@@ -1256,7 +1252,7 @@ library(gridExtra)
 library(grid)
 
 # Chart 1: Distribution of PMI aetiologies
-plot1 <- ggplot(pmi_causes_chart_data, aes(x = reorder(PMI_category_display, plot_order),
+plot1 <- ggplot(pmi_causes_chart_data, aes(x = reorder(PMI_category_display, Percentage),
                                             y = Percentage,
                                             fill = PMI_type)) +
   geom_bar(stat = "identity") +
@@ -1282,7 +1278,7 @@ plot1 <- ggplot(pmi_causes_chart_data, aes(x = reorder(PMI_category_display, plo
 
 # Chart 2: In-hospital mortality by PMI aetiology
 plot2 <- ggplot(mortality_data <- pmi_causes_chart_data,
-                aes(x = reorder(PMI_category_display, plot_order),
+                aes(x = reorder(PMI_category_display, Percentage),
                     y = Mortality_InHospital_Pct,
                     fill = PMI_type)) +
   geom_bar(stat = "identity") +
