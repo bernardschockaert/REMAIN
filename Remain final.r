@@ -1170,6 +1170,95 @@ p6 <- ggplot(stratified_mort_data, aes(x = Threshold, y = Mortality, fill = PMI_
 
 print(p6)
 
+# ========== DUAL PANEL: PMI AETIOLOGY DISTRIBUTION AND MORTALITY ==========
+
+cat("\n--- Creating Dual Panel: PMI Aetiology Distribution and Mortality ---\n")
+
+# Prepare data for PMI category distribution and mortality
+pmi_distribution_mortality <- obs12_with_pmi %>%
+  mutate(
+    PMI_category_display = case_when(
+      PMI_category == "T2MI_with_cause" ~ "T2MI+",
+      PMI_category == "T2MI_without_cause" ~ "T2MI-",
+      PMI_category == "Acute renal failure" ~ "Acute renal failure",
+      PMI_category == "Trauma" ~ "Trauma",
+      PMI_category == "Stroke" ~ "Stroke",
+      PMI_category == "Sepsis" ~ "Sepsis",
+      PMI_category == "Tachyarrhythmia" ~ "Tachyarrhythmia",
+      PMI_category == "T1MI" ~ "T1MI",
+      PMI_category == "AHF" ~ "AHF",
+      grepl("PE|Pulmonary", PMI_category, ignore.case = TRUE) ~ "PE",
+      TRUE ~ "Other"
+    ),
+    PMI_type_color = PMI_type
+  ) %>%
+  group_by(PMI_category_display, PMI_type_color) %>%
+  summarise(
+    N = n(),
+    Deaths = sum(death_in_hospital, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    Percentage = round(N / sum(N) * 100, 1),
+    Mortality = round(Deaths / N * 100, 1)
+  ) %>%
+  arrange(desc(N))
+
+# Left panel: Distribution of PMI Aetiologies
+p_distribution <- ggplot(pmi_distribution_mortality,
+                         aes(x = reorder(PMI_category_display, N),
+                             y = Percentage,
+                             fill = PMI_type_color)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(N, " (", Percentage, "%)")),
+            hjust = -0.1, size = 3) +
+  scale_fill_manual(values = c("Cardiac" = "#E64B35", "Noncardiac" = "#4DBBD5"),
+                    name = "PMI Type") +
+  coord_flip() +
+  labs(title = "Distribution of PMI Aetiologies",
+       x = "PMI Category",
+       y = "Percentage (%)") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        plot.title = element_text(size = 12, face = "bold")) +
+  xlim(NA, max(pmi_distribution_mortality$Percentage) * 1.3)
+
+# Right panel: In-Hospital Mortality by PMI Aetiology
+p_mortality <- ggplot(pmi_distribution_mortality,
+                      aes(x = reorder(PMI_category_display, N),
+                          y = Mortality,
+                          fill = PMI_type_color)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(Deaths, " (", Mortality, "%)")),
+            hjust = -0.1, size = 3) +
+  scale_fill_manual(values = c("Cardiac" = "#E64B35", "Noncardiac" = "#4DBBD5"),
+                    name = "PMI Type") +
+  coord_flip() +
+  labs(title = "In-Hospital Mortality by PMI Aetiology",
+       x = "",
+       y = "Mortality (%)") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        plot.title = element_text(size = 12, face = "bold"),
+        axis.text.y = element_blank()) +
+  xlim(NA, max(pmi_distribution_mortality$Mortality, na.rm = TRUE) * 1.3)
+
+# Combine panels using patchwork
+if (!require("patchwork", quietly = TRUE)) {
+  install.packages("patchwork")
+  library(patchwork)
+}
+
+p_combined <- p_distribution + p_mortality +
+  plot_annotation(
+    title = "PMI Aetiology: Distribution and In-Hospital Mortality",
+    theme = theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+  ) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+
+print(p_combined)
+
 cat("\n=== ANALYSIS COMPLETE ===\n")
 cat("\n✓ Comparison table: OBS12 vs Agreed PMI categories\n")
 cat("✓ PMI category overviews (noncardiac, cardiac, T2MI)\n")
@@ -1186,4 +1275,5 @@ cat("✓ **NEW: Enhanced bar charts with cardiac vs noncardiac colors (#E64B35 &
 cat("✓ **NEW: Mortality by PMI aetiology bar charts**\n")
 cat("✓ **NEW: Combined vitals thresholds and mortality visualization**\n")
 cat("✓ **NEW: Stratified mortality analysis by PMI type and thresholds**\n")
+cat("✓ **NEW: Dual-panel figure showing PMI aetiology distribution and mortality**\n")
 cat("✓ Kaplan-Meier curves removed as requested\n")
