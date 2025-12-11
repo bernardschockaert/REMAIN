@@ -309,6 +309,7 @@ cat("\n\n=== COUPLING FIRST hsTnT VALUES WITH LOCATION ===\n\n")
 # Get first hsTnT measurement per patient
 first_hstnt <- lab %>%
   filter(!is.na(valueQuantity_value)) %>%
+  mutate(valueQuantity_value = as.numeric(valueQuantity_value)) %>%  # Ensure numeric
   arrange(pseudonym_value, collection_collectedDateTime) %>%
   group_by(pseudonym_value) %>%
   slice(1) %>%
