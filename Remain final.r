@@ -306,10 +306,11 @@ cat("  SpO2 < 90%:", round(vitals_summary$SpO2_below_90, 1), "%\n\n")
 
 cat("\n\n=== COUPLING FIRST hsTnT VALUES WITH LOCATION ===\n\n")
 
-# Get first hsTnT measurement per patient
+# Get first hsTnT measurement per patient with collection datetime
 first_hstnt <- lab %>%
   filter(!is.na(valueQuantity_value)) %>%
-  mutate(valueQuantity_value = as.numeric(valueQuantity_value)) %>%  # Ensure numeric
+  mutate(valueQuantity_value = as.numeric(valueQuantity_value),
+         collection_collectedDateTime = as.POSIXct(collection_collectedDateTime)) %>%  # Ensure numeric and datetime
   arrange(pseudonym_value, collection_collectedDateTime) %>%
   group_by(pseudonym_value) %>%
   slice(1) %>%
@@ -318,13 +319,14 @@ first_hstnt <- lab %>%
          first_hstnt_value = valueQuantity_value,
          first_hstnt_datetime = collection_collectedDateTime)
 
-# Get admission location information
-admission_location <- opname %>%
-  select(pseudonym_value, specialty_display_original, opnamedeel_afdeling)
-
-# Couple first hsTnT with location and merge with obs12_with_pmi
+# Get ward location at time of first hsTnT measurement
+# Join opname data with first hsTnT to get the ward where the patient was when the sample was collected
 hstnt_location <- first_hstnt %>%
-  left_join(admission_location, by = "pseudonym_value")
+  left_join(opname %>% select(pseudonym_value, specialty_display_original, opnamedeel_afdeling),
+            by = "pseudonym_value") %>%
+  # Keep all columns including the datetime for verification
+  select(pseudonym_value, first_hstnt_value, first_hstnt_datetime,
+         specialty_display_original, opnamedeel_afdeling)
 
 obs12_with_pmi <- obs12_with_pmi %>%
   left_join(hstnt_location, by = c("Pseudonym" = "pseudonym_value"))
@@ -332,18 +334,28 @@ obs12_with_pmi <- obs12_with_pmi %>%
 agreed_survival <- agreed_survival %>%
   left_join(hstnt_location, by = c("Pseudonym" = "pseudonym_value"))
 
-cat("First hsTnT values coupled with admission location data\n")
-cat("NOTE: 'specialty_display_original' = admission specialty\n")
-cat("      'opnamedeel_afdeling' = admission ward/department\n\n")
+cat("First hsTnT values coupled with ward location based on collection datetime\n")
+cat("NOTE: Each patient's first hsTnT measurement (by collection_collectedDateTime)\n")
+cat("      is coupled with their ward location (opnamedeel_afdeling) at that time\n\n")
 cat("Patients with hsTnT data:", sum(!is.na(obs12_with_pmi$first_hstnt_value)), "\n")
 cat("Patients with specialty data:", sum(!is.na(obs12_with_pmi$specialty_display_original)), "\n")
-cat("Patients with ward data:", sum(!is.na(obs12_with_pmi$opnamedeel_afdeling)), "\n\n")
+cat("Patients with ward data:", sum(!is.na(obs12_with_pmi$opnamedeel_afdeling)), "\n")
+cat("Patients with collection datetime:", sum(!is.na(obs12_with_pmi$first_hstnt_datetime)), "\n\n")
 
-# Summary of first hsTnT by admission specialty
-cat("--- First hsTnT Values by Admission Specialty ---\n")
-hstnt_by_specialty <- obs12_with_pmi %>%
+# Show sample of first hsTnT coupling with datetime and location
+cat("--- Sample of First hsTnT Coupling (first 10 patients) ---\n")
+sample_coupling <- obs12_with_pmi %>%
   filter(!is.na(first_hstnt_value)) %>%
-  group_by(specialty_display_original) %>%
+  select(Pseudonym, first_hstnt_value, first_hstnt_datetime, opnamedeel_afdeling, specialty_display_original) %>%
+  head(10)
+print(sample_coupling)
+cat("\n")
+
+# Summary of first hsTnT by ward location
+cat("--- First hsTnT Values by Ward (opnamedeel_afdeling) ---\n")
+hstnt_by_ward <- obs12_with_pmi %>%
+  filter(!is.na(first_hstnt_value)) %>%
+  group_by(opnamedeel_afdeling) %>%
   summarise(
     N = n(),
     Mean_hsTnT = round(mean(first_hstnt_value, na.rm = TRUE), 1),
@@ -355,12 +367,12 @@ hstnt_by_specialty <- obs12_with_pmi %>%
   ) %>%
   arrange(desc(N))
 
-print(hstnt_by_specialty, n = Inf)
+print(hstnt_by_ward, n = Inf)
 
-cat("\n--- First hsTnT Values by Admission Ward ---\n")
-hstnt_by_ward <- obs12_with_pmi %>%
+cat("\n--- First hsTnT Values by Specialty ---\n")
+hstnt_by_specialty <- obs12_with_pmi %>%
   filter(!is.na(first_hstnt_value)) %>%
-  group_by(opnamedeel_afdeling) %>%
+  group_by(specialty_display_original) %>%
   summarise(
     N = n(),
     Mean_hsTnT = round(mean(first_hstnt_value, na.rm = TRUE), 1),
@@ -369,7 +381,7 @@ hstnt_by_ward <- obs12_with_pmi %>%
   ) %>%
   arrange(desc(N))
 
-print(hstnt_by_ward, n = Inf)
+print(hstnt_by_specialty, n = Inf)
 cat("\n")
 
 # ========== PMI CATEGORY BREAKDOWN - OBS12 ==========
