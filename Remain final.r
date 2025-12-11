@@ -306,27 +306,22 @@ cat("  SpO2 < 90%:", round(vitals_summary$SpO2_below_90, 1), "%\n\n")
 
 cat("\n\n=== COUPLING FIRST hsTnT VALUES WITH LOCATION ===\n\n")
 
-# Get first hsTnT measurement per patient with collection datetime
+# Get first (oldest) hsTnT measurement per patient from lab data
 first_hstnt <- lab %>%
   filter(!is.na(valueQuantity_value)) %>%
-  mutate(valueQuantity_value = as.numeric(valueQuantity_value),
-         collection_collectedDateTime = as.POSIXct(collection_collectedDateTime)) %>%  # Ensure numeric and datetime
-  arrange(pseudonym_value, collection_collectedDateTime) %>%
+  mutate(valueQuantity_value = as.numeric(valueQuantity_value)) %>%
   group_by(pseudonym_value) %>%
-  slice(1) %>%
+  arrange(collection_collectedDateTime) %>%
+  slice(1) %>%  # Take the first row (oldest datetime) per patient
   ungroup() %>%
   select(pseudonym_value,
          first_hstnt_value = valueQuantity_value,
          first_hstnt_datetime = collection_collectedDateTime)
 
-# Get ward location at time of first hsTnT measurement
-# Join opname data with first hsTnT to get the ward where the patient was when the sample was collected
+# Couple with ward location from opname based on pseudonym_value
 hstnt_location <- first_hstnt %>%
   left_join(opname %>% select(pseudonym_value, specialty_display_original, opnamedeel_afdeling),
-            by = "pseudonym_value") %>%
-  # Keep all columns including the datetime for verification
-  select(pseudonym_value, first_hstnt_value, first_hstnt_datetime,
-         specialty_display_original, opnamedeel_afdeling)
+            by = "pseudonym_value")
 
 obs12_with_pmi <- obs12_with_pmi %>%
   left_join(hstnt_location, by = c("Pseudonym" = "pseudonym_value"))
@@ -334,9 +329,9 @@ obs12_with_pmi <- obs12_with_pmi %>%
 agreed_survival <- agreed_survival %>%
   left_join(hstnt_location, by = c("Pseudonym" = "pseudonym_value"))
 
-cat("First hsTnT values coupled with ward location based on collection datetime\n")
-cat("NOTE: Each patient's first hsTnT measurement (by collection_collectedDateTime)\n")
-cat("      is coupled with their ward location (opnamedeel_afdeling) at that time\n\n")
+cat("First hsTnT values coupled with ward location (opnamedeel_afdeling)\n")
+cat("NOTE: Using oldest collection_collectedDateTime per patient from lab data\n")
+cat("      Coupled with opnamedeel_afdeling from opname by pseudonym_value\n\n")
 cat("Patients with hsTnT data:", sum(!is.na(obs12_with_pmi$first_hstnt_value)), "\n")
 cat("Patients with specialty data:", sum(!is.na(obs12_with_pmi$specialty_display_original)), "\n")
 cat("Patients with ward data:", sum(!is.na(obs12_with_pmi$opnamedeel_afdeling)), "\n")
