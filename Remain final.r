@@ -351,6 +351,21 @@ sample_coupling <- obs12_with_pmi %>%
 print(sample_coupling)
 cat("\n")
 
+# Count of unique patients per ward (opnamedeel_afdeling) in OBS12_with_PMI
+cat("--- OBS12_with_PMI Patients Count by Ward (opnamedeel_afdeling) ---\n")
+patients_per_ward <- obs12_with_pmi %>%
+  group_by(opnamedeel_afdeling) %>%
+  summarise(
+    N_Patients = n_distinct(Pseudonym),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(N_Patients))
+
+print(patients_per_ward, n = Inf)
+cat(sprintf("\nTotal OBS12_with_PMI patients: %d\n", n_distinct(obs12_with_pmi$Pseudonym)))
+cat(sprintf("Patients with ward data: %d\n", sum(!is.na(obs12_with_pmi$opnamedeel_afdeling))))
+cat(sprintf("Patients without ward data: %d\n\n", sum(is.na(obs12_with_pmi$opnamedeel_afdeling))))
+
 # Summary of first hsTnT by ward location
 cat("--- First hsTnT Values by Ward (opnamedeel_afdeling) ---\n")
 hstnt_by_ward <- obs12_with_pmi %>%
