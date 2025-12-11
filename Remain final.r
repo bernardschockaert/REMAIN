@@ -1183,94 +1183,164 @@ p6 <- ggplot(stratified_mort_data, aes(x = Threshold, y = Mortality, fill = PMI_
 
 print(p6)
 
-# ========== DUAL PANEL: PMI AETIOLOGY DISTRIBUTION AND MORTALITY ==========
+# ========== MORTALITY BY PMI CATEGORY ==========
 
-cat("\n--- Creating Dual Panel: PMI Aetiology Distribution and Mortality ---\n")
-
-# Prepare data for PMI category distribution and mortality
-pmi_distribution_mortality <- obs12_with_pmi %>%
-  mutate(
-    PMI_category_display = case_when(
-      PMI_category == "T2MI_with_cause" ~ "T2MI+",
-      PMI_category == "T2MI_without_cause" ~ "T2MI-",
-      PMI_category == "Acute renal failure" ~ "Acute renal failure",
-      PMI_category == "Trauma" ~ "Trauma",
-      PMI_category == "Stroke" ~ "Stroke",
-      PMI_category == "Sepsis" ~ "Sepsis",
-      PMI_category == "Tachyarrhythmia" ~ "Tachyarrhythmia",
-      PMI_category == "T1MI" ~ "T1MI",
-      PMI_category == "AHF" ~ "AHF",
-      grepl("PE|Pulmonary", PMI_category, ignore.case = TRUE) ~ "PE",
-      TRUE ~ "Other"
-    ),
-    PMI_type_color = PMI_type
-  ) %>%
-  group_by(PMI_category_display, PMI_type_color) %>%
+cat("\n\n--- In-Hospital Mortality by PMI Category (OBS12) ---\n\n")
+obs12_mortality_category <- obs12_with_pmi %>%
+  group_by(PMI_category) %>%
   summarise(
     N = n(),
-    Deaths = sum(death_in_hospital, na.rm = TRUE),
-    .groups = "drop"
+    Deaths = sum(death_in_hospital == 1, na.rm = TRUE),
+    Mortality_pct = round(Deaths / N * 100, 1),
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(N))
+print(obs12_mortality_category, n = Inf)
+
+# ========== BAR CHART: PMI CAUSES AS PERCENTAGE ==========
+
+cat("\n--- Creating Bar Chart of PMI Causes (OBS12) ---\n")
+
+# Prepare data for bar chart with in-hospital mortality
+pmi_causes_chart_data <- obs12_with_pmi %>%
+  group_by(PMI_category, PMI_type) %>%
+  summarise(
+    N = n(),
+    Deaths_InHospital = sum(death_in_hospital, na.rm = TRUE),
+    .groups = 'drop'
   ) %>%
   mutate(
     Percentage = round(N / sum(N) * 100, 1),
-    Mortality = round(Deaths / N * 100, 1)
+    Mortality_InHospital_Pct = round(Deaths_InHospital / N * 100, 1),
+    # Rename PMI categories for cleaner display
+    PMI_category_display = case_when(
+      PMI_category == "T2MI_with_cause" ~ "T2MI+",
+      PMI_category == "T2MI_without_cause" ~ "T2MI-",
+      PMI_category == "renal_fail" ~ "Acute renal failure",
+      PMI_category == "ctrauma" ~ "Trauma",
+      PMI_category == "stroke" ~ "Stroke",
+      PMI_category == "sepsis" ~ "Sepsis",
+      PMI_category == "tachy" ~ "Tachyarrhythmia",
+      PMI_category == "ex_car_other" ~ "Other",
+      is.na(PMI_category) ~ "NA",
+      TRUE ~ as.character(PMI_category)
+    )
   ) %>%
-  arrange(desc(N))
+  arrange(desc(Percentage)) %>%
+  # Reorder: NA should be at bottom (least common), so reverse the percentage order for plotting
+  mutate(
+    plot_order = if_else(PMI_category_display == "NA", -1, Percentage)  # NA gets lowest order
+  )
 
-# Left panel: Distribution of PMI Aetiologies
-p_distribution <- ggplot(pmi_distribution_mortality,
-                         aes(x = reorder(PMI_category_display, N),
-                             y = Percentage,
-                             fill = PMI_type_color)) +
+# Create dual bar charts: Distribution and Mortality side by side
+# Light blue for Noncardiac (extracardiac), Light red for Cardiac
+
+# Load gridExtra if not already loaded
+if (!require("gridExtra")) install.packages("gridExtra")
+library(gridExtra)
+library(grid)
+
+# Chart 1: Distribution of PMI aetiologies
+plot1 <- ggplot(pmi_causes_chart_data, aes(x = reorder(PMI_category_display, plot_order),
+                                            y = Percentage,
+                                            fill = PMI_type)) +
   geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("Cardiac" = "#FFB6C1", "Noncardiac" = "#ADD8E6")) +
+  coord_flip() +
+  labs(
+    title = "Distribution of PMI Aetiologies",
+    x = "PMI Category",
+    y = "Percentage (%)",
+    fill = "PMI Type"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 12),
+    axis.text.y = element_text(size = 10),
+    axis.text.x = element_text(size = 10),
+    legend.position = "none"  # Remove legend here, will add shared legend below
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
   geom_text(aes(label = paste0(N, " (", Percentage, "%)")),
-            hjust = -0.1, size = 3) +
-  scale_fill_manual(values = c("Cardiac" = "#E64B35", "Noncardiac" = "#4DBBD5"),
-                    name = "PMI Type") +
-  coord_flip() +
-  labs(title = "Distribution of PMI Aetiologies",
-       x = "PMI Category",
-       y = "Percentage (%)") +
-  theme_minimal() +
-  theme(legend.position = "bottom",
-        plot.title = element_text(size = 12, face = "bold")) +
-  ylim(0, max(pmi_distribution_mortality$Percentage) * 1.3)
+            hjust = -0.1,
+            size = 3)
 
-# Right panel: In-Hospital Mortality by PMI Aetiology
-p_mortality <- ggplot(pmi_distribution_mortality,
-                      aes(x = reorder(PMI_category_display, N),
-                          y = Mortality,
-                          fill = PMI_type_color)) +
+# Chart 2: In-hospital mortality by PMI aetiology
+plot2 <- ggplot(mortality_data <- pmi_causes_chart_data,
+                aes(x = reorder(PMI_category_display, plot_order),
+                    y = Mortality_InHospital_Pct,
+                    fill = PMI_type)) +
   geom_bar(stat = "identity") +
-  geom_text(aes(label = paste0(Deaths, " (", Mortality, "%)")),
-            hjust = -0.1, size = 3) +
-  scale_fill_manual(values = c("Cardiac" = "#E64B35", "Noncardiac" = "#4DBBD5"),
-                    name = "PMI Type") +
+  scale_fill_manual(values = c("Cardiac" = "#FFB6C1", "Noncardiac" = "#ADD8E6")) +
   coord_flip() +
-  labs(title = "In-Hospital Mortality by PMI Aetiology",
-       x = "",
-       y = "Mortality (%)") +
+  labs(
+    title = "In-Hospital Mortality by PMI Aetiology",
+    x = "",
+    y = "Mortality (%)",
+    fill = "PMI Type"
+  ) +
   theme_minimal() +
-  theme(legend.position = "bottom",
-        plot.title = element_text(size = 12, face = "bold"),
-        axis.text.y = element_blank()) +
-  ylim(0, max(pmi_distribution_mortality$Mortality, na.rm = TRUE) * 1.3)
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 12),
+    axis.text.y = element_blank(),  # Remove y-axis labels (same as plot 1)
+    axis.ticks.y = element_blank(),
+    axis.text.x = element_text(size = 10),
+    legend.position = "none"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
+  geom_text(aes(label = paste0(Deaths_InHospital, " (", Mortality_InHospital_Pct, "%)")),
+            hjust = -0.1,
+            size = 3)
 
-# Combine panels using patchwork
-if (!require("patchwork", quietly = TRUE)) {
-  install.packages("patchwork")
-  library(patchwork)
+# Create a dummy plot to extract legend
+legend_plot <- ggplot(pmi_causes_chart_data, aes(x = Percentage, y = PMI_category_display, fill = PMI_type)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("Cardiac" = "#FFB6C1", "Noncardiac" = "#ADD8E6")) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  labs(fill = "PMI Type")
+
+# Extract legend
+library(ggplotify)
+get_legend <- function(plot) {
+  tmp <- ggplot_gtable(ggplot_build(plot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  if(length(leg) > 0) return(tmp$grobs[[leg]])
+  return(NULL)
 }
 
-p_combined <- p_distribution + p_mortality +
-  plot_annotation(
-    title = "PMI Aetiology: Distribution and In-Hospital Mortality",
-    theme = theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
-  ) +
-  plot_layout(guides = "collect") &
-  theme(legend.position = "bottom")
+legend <- get_legend(legend_plot)
 
-print(p_combined)
+# Combine plots side by side with shared legend at bottom
+combined_plot <- grid.arrange(
+  arrangeGrob(plot1, plot2, ncol = 2),
+  legend,
+  nrow = 2,
+  heights = c(10, 1),
+  top = textGrob("PMI Aetiology: Distribution and In-Hospital Mortality",
+                 gp = gpar(fontsize = 14, fontface = "bold"))
+)
+
+# Save the combined plot
+ggsave("PMI_Distribution_Mortality_OBS12.png", plot = combined_plot, width = 16, height = 8, dpi = 300)
+cat("Combined bar chart saved as 'PMI_Distribution_Mortality_OBS12.png'\n\n")
+
+# Print the data table
+cat("PMI Causes Distribution:\n")
+print(pmi_causes_chart_data %>% select(PMI_category_display, PMI_type, N, Percentage), n = Inf)
+cat("\n")
+
+cat("\n--- In-Hospital Mortality by PMI Category (Agreed Cases) ---\n\n")
+agreed_mortality_category <- agreed_survival %>%
+  group_by(PMI_category) %>%
+  summarise(
+    N = n(),
+    Deaths = sum(death_in_hospital == 1, na.rm = TRUE),
+    Mortality_pct = round(Deaths / N * 100, 1),
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(N))
+print(agreed_mortality_category, n = Inf)
 
 cat("\n=== ANALYSIS COMPLETE ===\n")
 cat("\n✓ Comparison table: OBS12 vs Agreed PMI categories\n")
