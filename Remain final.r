@@ -1222,7 +1222,7 @@ p_distribution <- ggplot(pmi_distribution_mortality,
   theme_minimal() +
   theme(legend.position = "bottom",
         plot.title = element_text(size = 12, face = "bold")) +
-  xlim(NA, max(pmi_distribution_mortality$Percentage) * 1.3)
+  ylim(0, max(pmi_distribution_mortality$Percentage) * 1.3)
 
 # Right panel: In-Hospital Mortality by PMI Aetiology
 p_mortality <- ggplot(pmi_distribution_mortality,
@@ -1242,7 +1242,7 @@ p_mortality <- ggplot(pmi_distribution_mortality,
   theme(legend.position = "bottom",
         plot.title = element_text(size = 12, face = "bold"),
         axis.text.y = element_blank()) +
-  xlim(NA, max(pmi_distribution_mortality$Mortality, na.rm = TRUE) * 1.3)
+  ylim(0, max(pmi_distribution_mortality$Mortality, na.rm = TRUE) * 1.3)
 
 # Combine panels using patchwork
 if (!require("patchwork", quietly = TRUE)) {
