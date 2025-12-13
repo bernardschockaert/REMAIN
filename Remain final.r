@@ -306,20 +306,31 @@ cat("  SpO2 < 90%:", round(vitals_summary$SpO2_below_90, 1), "%\n\n")
 
 cat("\n\n=== COUPLING FIRST hsTnT VALUES WITH LOCATION ===\n\n")
 
-# Get first (oldest) hsTnT measurement per patient from lab data
+# Get OBS12_with_PMI pseudonyms for filtering
+obs12_pseudonyms <- obs12_with_pmi %>% pull(Pseudonym)
+
+# Get first hsTnT > 14 measurement per patient from lab data
+# Filter for hsTnT > 14, get earliest datetime per patient
 first_hstnt <- lab %>%
-  filter(!is.na(valueQuantity_value)) %>%
   mutate(valueQuantity_value = as.numeric(valueQuantity_value)) %>%
+  filter(!is.na(valueQuantity_value), valueQuantity_value > 14) %>%
   group_by(pseudonym_value) %>%
   arrange(collection_collectedDateTime) %>%
-  slice(1) %>%  # Take the first row (oldest datetime) per patient
+  slice(1) %>%  # Take the first row (earliest datetime) per patient
   ungroup() %>%
   select(pseudonym_value,
          first_hstnt_value = valueQuantity_value,
          first_hstnt_datetime = collection_collectedDateTime)
 
+# Couple with Study_number from coupling file
+first_hstnt_with_study <- first_hstnt %>%
+  left_join(coupling %>% select(pseudonym_value = Pseudonym, Study_number),
+            by = "pseudonym_value")
+
 # Couple with ward location from opname based on pseudonym_value
-hstnt_location <- first_hstnt %>%
+# Only keep patients from OBS12_with_PMI
+hstnt_location <- first_hstnt_with_study %>%
+  filter(pseudonym_value %in% obs12_pseudonyms) %>%
   left_join(opname %>% select(pseudonym_value, specialty_display_original, opnamedeel_afdeling),
             by = "pseudonym_value")
 
@@ -329,8 +340,10 @@ obs12_with_pmi <- obs12_with_pmi %>%
 agreed_survival <- agreed_survival %>%
   left_join(hstnt_location, by = c("Pseudonym" = "pseudonym_value"))
 
-cat("First hsTnT values coupled with ward location (opnamedeel_afdeling)\n")
-cat("NOTE: Using oldest collection_collectedDateTime per patient from lab data\n")
+cat("First hsTnT values (>14) coupled with ward location (opnamedeel_afdeling)\n")
+cat("NOTE: Using hsTnT > 14 with earliest collection_collectedDateTime per patient\n")
+cat("      Only for OBS12_with_PMI patients\n")
+cat("      Coupled with Study_number from coupling file\n")
 cat("      Coupled with opnamedeel_afdeling from opname by pseudonym_value\n\n")
 cat("Patients with hsTnT data:", sum(!is.na(obs12_with_pmi$first_hstnt_value)), "\n")
 cat("Patients with specialty data:", sum(!is.na(obs12_with_pmi$specialty_display_original)), "\n")
