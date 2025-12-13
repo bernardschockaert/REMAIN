@@ -3,17 +3,17 @@
 # 1. In-hospital mortality by PMI aetiology
 # 2. Postoperative vitals analysis (hypotension & tachycardia)
 # 3. Expanded exclusion list with old/insufficient data entries
-# Set CRAN mirror (Netherlands)
-options(repos = c(CRAN = "https://cran.rstudio.com/"))
+# Set CRAN mirror - try cloud mirror which auto-selects closest server
+options(repos = c(CRAN = "https://cloud.r-project.org"))
 
-# Load required packages (installation lines commented out - packages already installed)
-# if (!require("tidyverse")) install.packages("tidyverse")
-# if (!require("readxl")) install.packages("readxl")
-# if (!require("dplyr")) install.packages("dplyr")
-# if (!require("survival")) install.packages("survival")
-# if (!require("survminer")) install.packages("survminer")
-# if (!require("irr")) install.packages("irr")
-# if (!require("tableone")) install.packages("tableone")
+# Load required packages - reinstall for R 4.5
+if (!require("tidyverse")) install.packages("tidyverse")
+if (!require("readxl")) install.packages("readxl")
+if (!require("dplyr")) install.packages("dplyr")
+if (!require("survival")) install.packages("survival")
+if (!require("survminer")) install.packages("survminer")
+if (!require("irr")) install.packages("irr")
+if (!require("tableone")) install.packages("tableone")
 
 library(tidyverse)
 library(readxl)
