@@ -117,7 +117,12 @@ data_final <- data_included%>%
 
 #Compare OBS12 and OBS34
 obs12 <- data_final %>% filter(Observer_Group == "OBS12")
-obs34 <- data_final %>% filter(Observer_Group == "OBS34")                
+obs34 <- data_final %>% filter(Observer_Group == "OBS34")
+
+cat("\n=== PATIENT COUNT TRACKING ===\n")
+cat("Total data_final patients:", nrow(data_final), "\n")
+cat("OBS12 patients:", nrow(obs12), "\n")
+cat("OBS34 patients:", nrow(obs34), "\n")                
 
 comparison <- inner_join(
   obs12 %>% select(`Participant Id`,
@@ -193,17 +198,25 @@ cat("\nPercentage agreement:", round(pct_agreement, 1), "%\n")
 # This ensures uniform survival calculations across tables and KM curves
 
 # OBS12 with PMI classification - one row per patient
-obs12_with_pmi <- obs12 %>%
+obs12_before_filter <- obs12 %>%
   mutate(
     PMI_type = case_when(
-      Cause_cardiac_yes == 1 | cause_T2MI == 1 | 
+      Cause_cardiac_yes == 1 | cause_T2MI == 1 |
         (cause_T2MI == 0 & cause_extra_car_yes == 0 & Cause_cardiac_yes == 0) ~ "Cardiac",
       cause_extra_car_yes == 1 ~ "Noncardiac",
       TRUE ~ NA_character_
     )
-  ) %>%
+  )
+
+cat("OBS12 before PMI_type filter:", nrow(obs12_before_filter), "\n")
+cat("OBS12 with NA PMI_type:", sum(is.na(obs12_before_filter$PMI_type)), "\n")
+
+obs12_with_pmi <- obs12_before_filter %>%
   filter(!is.na(PMI_type)) %>%
   distinct(Pseudonym, .keep_all = TRUE)
+
+cat("OBS12_with_PMI after filter:", nrow(obs12_with_pmi), "\n")
+cat("Patients lost due to NA PMI_type:", nrow(obs12_before_filter) - nrow(obs12_with_pmi), "\n\n")
 
 # Create agreed_with_pmi dataset
 agreed_with_pmi <- obs12 %>%
