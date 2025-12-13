@@ -308,6 +308,7 @@ cat("\n\n=== COUPLING FIRST hsTnT VALUES WITH LOCATION ===\n\n")
 
 # Get OBS12_with_PMI pseudonyms for filtering
 obs12_pseudonyms <- obs12_with_pmi %>% pull(Pseudonym)
+cat("DEBUG: Total OBS12_with_PMI patients:", length(obs12_pseudonyms), "\n")
 
 # Get first hsTnT > 14 measurement per patient from lab data
 # Filter for hsTnT > 14, get earliest datetime per patient
@@ -322,10 +323,19 @@ first_hstnt <- lab %>%
          first_hstnt_value = valueQuantity_value,
          first_hstnt_datetime = collection_collectedDateTime)
 
+cat("DEBUG: Patients in lab with hsTnT > 14:", nrow(first_hstnt), "\n")
+
+# Check how many OBS12_with_PMI patients are in the lab data
+matching_in_lab <- sum(obs12_pseudonyms %in% first_hstnt$pseudonym_value)
+cat("DEBUG: OBS12_with_PMI patients found in lab data:", matching_in_lab, "\n")
+cat("DEBUG: OBS12_with_PMI patients NOT found in lab data:", length(obs12_pseudonyms) - matching_in_lab, "\n")
+
 # Couple with Study_number from coupling file
 first_hstnt_with_study <- first_hstnt %>%
   left_join(coupling %>% select(pseudonym_value = Pseudonym, Study_number),
             by = "pseudonym_value")
+
+cat("DEBUG: After coupling with Study_number:", nrow(first_hstnt_with_study), "\n")
 
 # Couple with ward location from opname based on pseudonym_value
 # Only keep patients from OBS12_with_PMI
@@ -333,6 +343,9 @@ hstnt_location <- first_hstnt_with_study %>%
   filter(pseudonym_value %in% obs12_pseudonyms) %>%
   left_join(opname %>% select(pseudonym_value, specialty_display_original, opnamedeel_afdeling),
             by = "pseudonym_value")
+
+cat("DEBUG: After filtering for OBS12_with_PMI:", nrow(hstnt_location), "\n")
+cat("DEBUG: Patients with opnamedeel_afdeling data:", sum(!is.na(hstnt_location$opnamedeel_afdeling)), "\n\n")
 
 obs12_with_pmi <- obs12_with_pmi %>%
   left_join(hstnt_location, by = c("Pseudonym" = "pseudonym_value"))
