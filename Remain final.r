@@ -6,14 +6,14 @@
 # Set CRAN mirror (Netherlands)
 options(repos = c(CRAN = "https://cran.rstudio.com/"))
 
-# Load required packages
-if (!require("tidyverse")) install.packages("tidyverse")
-if (!require("readxl")) install.packages("readxl")
-if (!require("dplyr")) install.packages("dplyr")
-if (!require("survival")) install.packages("survival")
-if (!require("survminer")) install.packages("survminer")
-if (!require("irr")) install.packages("irr")
-if (!require("tableone")) install.packages("tableone")
+# Load required packages (installation lines commented out - packages already installed)
+# if (!require("tidyverse")) install.packages("tidyverse")
+# if (!require("readxl")) install.packages("readxl")
+# if (!require("dplyr")) install.packages("dplyr")
+# if (!require("survival")) install.packages("survival")
+# if (!require("survminer")) install.packages("survminer")
+# if (!require("irr")) install.packages("irr")
+# if (!require("tableone")) install.packages("tableone")
 
 library(tidyverse)
 library(readxl)
