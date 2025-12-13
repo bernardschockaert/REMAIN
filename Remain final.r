@@ -322,7 +322,7 @@ cat("\n\n=== COUPLING FIRST hsTnT VALUES WITH LOCATION ===\n\n")
 # Get first hsTnT measurement per patient from lab data based on earliest collection_collectedDateTime
 first_hstnt <- lab %>%
   mutate(
-    valueQuantity_value = as.numeric(valueQuantity_value),
+    valueQuantity_value = as.numeric(gsub(",", ".", valueQuantity_value)),  # Replace comma with period, then convert
     collection_collectedDateTime = as.POSIXct(collection_collectedDateTime)  # Convert to datetime
   ) %>%
   filter(!is.na(valueQuantity_value)) %>%
