@@ -3,13 +3,10 @@
 # 1. In-hospital mortality by PMI aetiology
 # 2. Postoperative vitals analysis (hypotension & tachycardia)
 # 3. Expanded exclusion list with old/insufficient data entries
-# Add R 4.4 library path to access old packages
-.libPaths(c(.libPaths(), "C:/Users/bernard.schockaert/AppData/Local/R/win-library/4.4"))
+# Set CRAN mirror (HTTP instead of HTTPS for network compatibility)
+options(repos = c(CRAN = "http://cran.r-project.org"))
 
-# Set CRAN mirror
-options(repos = c(CRAN = "https://cloud.r-project.org"))
-
-# Load required packages from R 4.4 library
+# Load required packages
 library(tidyverse)
 library(readxl)
 library(dplyr)
