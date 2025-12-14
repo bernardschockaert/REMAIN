@@ -3,18 +3,13 @@
 # 1. In-hospital mortality by PMI aetiology
 # 2. Postoperative vitals analysis (hypotension & tachycardia)
 # 3. Expanded exclusion list with old/insufficient data entries
-# Set CRAN mirror - try cloud mirror which auto-selects closest server
+# Add R 4.4 library path to access old packages
+.libPaths(c(.libPaths(), "C:/Users/bernard.schockaert/AppData/Local/R/win-library/4.4"))
+
+# Set CRAN mirror
 options(repos = c(CRAN = "https://cloud.r-project.org"))
 
-# Load required packages - reinstall for R 4.5
-if (!require("tidyverse")) install.packages("tidyverse")
-if (!require("readxl")) install.packages("readxl")
-if (!require("dplyr")) install.packages("dplyr")
-if (!require("survival")) install.packages("survival")
-if (!require("survminer")) install.packages("survminer")
-if (!require("irr")) install.packages("irr")
-if (!require("tableone")) install.packages("tableone")
-
+# Load required packages from R 4.4 library
 library(tidyverse)
 library(readxl)
 library(dplyr)
