@@ -402,6 +402,27 @@ hstnt_by_specialty <- obs12_with_pmi %>%
 print(hstnt_by_specialty, n = Inf)
 cat("\n")
 
+# Summary of first hsTnT by year
+cat("--- First hsTnT Values by Year (2017-2023) ---\n")
+hstnt_by_year <- obs12_with_pmi %>%
+  filter(!is.na(first_hstnt_value), !is.na(first_hstnt_datetime)) %>%
+  mutate(Year = as.numeric(format(as.POSIXct(first_hstnt_datetime), "%Y"))) %>%
+  filter(Year >= 2017, Year <= 2023) %>%
+  group_by(Year) %>%
+  summarise(
+    N_Patients = n(),
+    Mean_hsTnT = round(mean(first_hstnt_value, na.rm = TRUE), 1),
+    Median_hsTnT = round(median(first_hstnt_value, na.rm = TRUE), 1),
+    SD_hsTnT = round(sd(first_hstnt_value, na.rm = TRUE), 1),
+    Min_hsTnT = round(min(first_hstnt_value, na.rm = TRUE), 1),
+    Max_hsTnT = round(max(first_hstnt_value, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) %>%
+  arrange(Year)
+
+print(hstnt_by_year, n = Inf)
+cat("\n")
+
 # ========== PMI CATEGORY BREAKDOWN - OBS12 ==========
 
 cat("\n\n=== PMI CATEGORY BREAKDOWN - OBS12 ===\n\n")
