@@ -264,14 +264,13 @@ vital_signs <- bp_data %>%
   full_join(hr_data, by = c("pseudonym_value", "effectiveDateTime")) %>%
   full_join(spo2_data, by = c("pseudonym_value", "effectiveDateTime"))
 
-# Patient-level summary with TWA hypotension and threshold violations
+# Patient-level summary with threshold violations
 patient_hemodynamics <- vital_signs %>%
   group_by(pseudonym_value) %>%
   summarise(
     any_MAP_below_65 = any(MAP < 65, na.rm = TRUE),
     any_HR_above_120 = any(HR > 120, na.rm = TRUE),
     any_SpO2_below_90 = any(SpO2 < 90, na.rm = TRUE),
-    TWA_hypotension = sum(pmax(65 - MAP[!is.na(MAP)], 0), na.rm = TRUE),  # Time-weighted average below 65
     .groups = "drop"
   )
 
