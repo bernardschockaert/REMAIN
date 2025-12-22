@@ -70,7 +70,7 @@ data_included <- data_included %>%
     time_to_death = as.numeric(difftime(deceasedDateTime, Date, units = "days"))
   ) %>%
   # CRITICAL: Calculate survival outcomes ONCE using Date from coupling
-  # These variables will be inherited by obs12_with_pmi and agreed_survival
+  # These variables will be inherited by obs12_with_pmi
   mutate(
     death_30d = if_else(!is.na(time_to_death) & time_to_death <= 30, 1, 0),
     survival_time_30d = if_else(is.na(time_to_death), 30, pmin(time_to_death, 30)),
@@ -185,9 +185,7 @@ print(agreement_table)
 pct_agreement <- sum(kappa_data$PMI_type_12 == kappa_data$PMI_type_34) / nrow(kappa_data) * 100
 cat("\nPercentage agreement:", round(pct_agreement, 1), "%\n")
 
-# ========== PREPARE DATASETS ==========
-# NOTE: obs12_with_pmi and agreed_survival inherit Date, death_30d, death_365d from data_included
-# This ensures uniform survival calculations across tables and KM curves
+# ========== PREPARE OBS12 DATASET ==========
 
 # OBS12 with PMI classification - one row per patient
 obs12_before_filter <- obs12 %>%
@@ -200,7 +198,7 @@ obs12_before_filter <- obs12 %>%
     )
   )
 
-cat("OBS12 before PMI_type filter:", nrow(obs12_before_filter), "\n")
+cat("\nOBS12 before PMI_type filter:", nrow(obs12_before_filter), "\n")
 cat("OBS12 with NA PMI_type:", sum(is.na(obs12_before_filter$PMI_type)), "\n")
 
 obs12_with_pmi <- obs12_before_filter %>%
@@ -209,17 +207,6 @@ obs12_with_pmi <- obs12_before_filter %>%
 
 cat("OBS12_with_PMI after filter:", nrow(obs12_with_pmi), "\n")
 cat("Patients lost due to NA PMI_type:", nrow(obs12_before_filter) - nrow(obs12_with_pmi), "\n\n")
-
-# Create agreed_with_pmi dataset
-agreed_with_pmi <- obs12 %>%
-  inner_join(agreed_patients, by = "Participant Id") %>%
-  filter(!is.na(PMI_type))
-
-# Agreed survival - one row per patient
-agreed_survival <- obs12 %>%
-  inner_join(agreed_patients, by = "Participant Id") %>%
-  filter(!is.na(PMI_type)) %>%
-  distinct(Pseudonym, .keep_all = TRUE)
 
 # ========== POSTOPERATIVE VITALS PROCESSING ==========
 
@@ -278,18 +265,12 @@ patient_hemodynamics <- vital_signs %>%
 data_included <- data_included %>%
   mutate(death_in_hospital = if_else(!is.na(time_to_death) & time_to_death <= 30, 1, 0))
 
-# Merge vital signs with obs12_with_pmi and agreed_survival
+# Merge vital signs with obs12_with_pmi
 obs12_with_pmi <- obs12_with_pmi %>%
   left_join(patient_hemodynamics, by = c("Pseudonym" = "pseudonym_value"))
 
-agreed_survival <- agreed_survival %>%
-  left_join(patient_hemodynamics, by = c("Pseudonym" = "pseudonym_value"))
-
-# Add in-hospital mortality to both datasets
+# Add in-hospital mortality
 obs12_with_pmi <- obs12_with_pmi %>%
-  mutate(death_in_hospital = if_else(!is.na(time_to_death) & time_to_death <= 30, 1, 0))
-
-agreed_survival <- agreed_survival %>%
   mutate(death_in_hospital = if_else(!is.na(time_to_death) & time_to_death <= 30, 1, 0))
 
 # Summary statistics for vital sign thresholds
@@ -331,9 +312,6 @@ hstnt_location <- first_hstnt %>%
             by = "pseudonym_value")
 
 obs12_with_pmi <- obs12_with_pmi %>%
-  left_join(hstnt_location, by = c("Pseudonym" = "pseudonym_value"))
-
-agreed_survival <- agreed_survival %>%
   left_join(hstnt_location, by = c("Pseudonym" = "pseudonym_value"))
 
 cat("First hsTnT values coupled with ward location (opnamedeel_afdeling)\n")
@@ -469,75 +447,8 @@ obs12_t2mi <- obs12_with_pmi %>%
   mutate(Percentage = round(n/sum(n)*100, 1))
 print(obs12_t2mi)
 
-# ========== PMI CATEGORY BREAKDOWN - AGREED CASES ==========
-
-cat("\n\n=== PMI CATEGORY BREAKDOWN - AGREED CASES ===\n\n")
-
-# Create PMI category variable for agreed cases
-agreed_survival <- agreed_survival %>%
-  mutate(
-    PMI_category = case_when(
-      cause_extra_car_yes == 1 ~ cause_extra_car,
-      Cause_cardiac_yes == 1 ~ cause_cardiac,
-      cause_T2MI == 1 ~ "T2MI_with_cause",
-      cause_T2MI == 0 & cause_extra_car_yes == 0 & Cause_cardiac_yes == 0 ~ "T2MI_without_cause",
-      TRUE ~ "Unknown"
-    )
-  )
-
-cat("--- Overview of PMI Categories (Agreed Cases) ---\n")
-agreed_category_overview <- agreed_survival %>%
-  count(PMI_category, sort = TRUE) %>%
-  mutate(Percentage = round(n/sum(n)*100, 1))
-print(agreed_category_overview, n = Inf)
-
-cat("\n--- Noncardiac Causes (Agreed Cases) ---\n")
-agreed_survival %>%
-  filter(cause_extra_car_yes == 1) %>%
-  count(cause_extra_car, sort = TRUE) %>%
-  mutate(Percentage = round(n/sum(n)*100, 1)) %>%
-  print(n = Inf)
-
-cat("\n--- Cardiac Causes (Agreed Cases) ---\n")
-agreed_survival %>%
-  filter(Cause_cardiac_yes == 1) %>%
-  count(cause_cardiac, sort = TRUE) %>%
-  mutate(Percentage = round(n/sum(n)*100, 1)) %>%
-  print(n = Inf)
-
-cat("\n--- T2MI Categories (Agreed Cases) ---\n")
-agreed_t2mi <- agreed_survival %>%
-  mutate(T2MI_status = case_when(
-    cause_T2MI == 1 ~ "T2MI with cause",
-    cause_T2MI == 0 & cause_extra_car_yes == 0 & Cause_cardiac_yes == 0 ~ "T2MI without cause",
-    TRUE ~ "Not T2MI"
-  )) %>%
-  count(T2MI_status, sort = TRUE) %>%
-  mutate(Percentage = round(n/sum(n)*100, 1))
-print(agreed_t2mi)
-
-# ========== COMPARISON TABLE: OBS12 vs AGREED PMI CATEGORIES ==========
-
-cat("\n\n=== COMPARISON: PMI CATEGORIES IN OBS12 vs AGREED CASES ===\n\n")
-
-# Create comparison table
-comparison_categories <- full_join(
-  obs12_category_overview %>% 
-    select(PMI_category, n_OBS12 = n, Pct_OBS12 = Percentage),
-  agreed_category_overview %>% 
-    select(PMI_category, n_Agreed = n, Pct_Agreed = Percentage),
-  by = "PMI_category"
-) %>%
-  mutate(
-    n_OBS12 = replace_na(n_OBS12, 0),
-    n_Agreed = replace_na(n_Agreed, 0),
-    Pct_OBS12 = replace_na(Pct_OBS12, 0),
-    Pct_Agreed = replace_na(Pct_Agreed, 0)
-  ) %>%
-  arrange(desc(n_OBS12))
-
-cat("PMI Categories: OBS12 vs Agreed Cases\n")
-print(comparison_categories, n = Inf)
+# ========== COMPARISON TABLE: OBS12 vs AGREED PMI CATEGORIES - REMOVED ==========
+# Note: Agreed patient analyses removed per user request (keeping only Cohen's Kappa)
 
 # ========== NEW: SURGICAL SPECIALTY ANALYSIS WITH P-VALUES ==========
 
@@ -620,10 +531,6 @@ compute_specialty_pvalue <- function(data, specialty_col = "surg_specialty", pmi
 cat("--- Cardiac vs Noncardiac Distribution by Surgical Specialty (OBS12) ---\n")
 obs12_specialty_results <- compute_specialty_pvalue(obs12_with_pmi)
 print(obs12_specialty_results)
-
-cat("\n--- Cardiac vs Noncardiac Distribution by Surgical Specialty (Agreed Cases) ---\n")
-agreed_specialty_results <- compute_specialty_pvalue(agreed_survival)
-print(agreed_specialty_results)
 
 # ========== SHAPIRO-WILK NORMALITY TESTS ==========
 
@@ -724,118 +631,6 @@ obs12_specialty_pval_table <- obs12_specialty_results %>%
   )
 print(obs12_specialty_pval_table, row.names = FALSE)
 cat("\nNote: Fisher's exact test is used when N < 20; Chi-square test otherwise.\n")
-
-# Table 3: Agreed cases - Cardiac vs Noncardiac
-cat("\n\n=== TABLE 3: AGREED CASES - CARDIAC vs NONCARDIAC PMI ===\n")
-agreed_survival_grouped <- agreed_survival %>%
-  mutate(PMI_type = factor(PMI_type, levels = c("Cardiac", "Noncardiac")))
-
-table3_agreed <- CreateTableOne(vars = vars_for_table,
-                                 strata = "PMI_type",
-                                 data = agreed_survival_grouped,
-                                 factorVars = cat_vars,
-                                 test = TRUE)
-print(table3_agreed, nonnormal = nonnormal_vars, showAllLevels = TRUE, formatOptions = list(big.mark = ","))
-
-# **NEW: Add surgical specialty p-values for Agreed**
-cat("\n\n--- SURGICAL SPECIALTY P-VALUES FOR AGREED CASES ---\n")
-cat("P-values comparing Cardiac vs Noncardiac proportions within each specialty:\n\n")
-agreed_specialty_pval_table <- agreed_specialty_results %>%
-  select(Specialty, N_Total, N_Cardiac, N_Noncardiac, P_value_ChiSq, P_value_Fisher) %>%
-  rename(
-    "Total N" = N_Total,
-    "Cardiac N" = N_Cardiac,
-    "Noncardiac N" = N_Noncardiac,
-    "P (Chi-square)" = P_value_ChiSq,
-    "P (Fisher)" = P_value_Fisher
-  )
-print(agreed_specialty_pval_table, row.names = FALSE)
-cat("\nNote: Fisher's exact test is used when N < 20; Chi-square test otherwise.\n")
-
-# ========== COX REGRESSION MODELS ==========
-
-cat("\n\n=== COX REGRESSION MODELS - OBS12 ===\n")
-
-obs12_cox <- obs12_with_pmi %>%
-  mutate(
-    RCRI_high = if_else(RCRI_score > 1, 1, 0),
-    emergency_surg_factor = factor(emergency_surg, levels = c(0, 1), labels = c("Elective", "Emergency")),
-    RCRI_high_factor = factor(RCRI_high, levels = c(0, 1), labels = c("RCRI≤1", "RCRI>1")),
-    sex_factor = factor(gender_display, levels = c("Male", "Female")),
-    age_continuous = leeftijd
-  )
-
-cox_30d_obs12_unadj <- coxph(Surv(survival_time_30d, death_30d) ~ PMI_type, data = obs12_cox)
-cox_30d_obs12_full <- coxph(Surv(survival_time_30d, death_30d) ~ PMI_type + age_continuous + sex_factor + emergency_surg_factor + RCRI_high_factor, data = obs12_cox)
-cox_365d_obs12_unadj <- coxph(Surv(survival_time_365d, death_365d) ~ PMI_type, data = obs12_cox)
-cox_365d_obs12_full <- coxph(Surv(survival_time_365d, death_365d) ~ PMI_type + age_continuous + sex_factor + emergency_surg_factor + RCRI_high_factor, data = obs12_cox)
-
-# Extract adjusted HRs for display on plots
-hr_30d_obs12_adj <- exp(coef(cox_30d_obs12_full)["PMI_typeNoncardiac"])
-ci_30d_obs12_adj <- exp(confint(cox_30d_obs12_full)["PMI_typeNoncardiac",])
-p_30d_obs12_adj <- summary(cox_30d_obs12_full)$coefficients["PMI_typeNoncardiac", "Pr(>|z|)"]
-
-hr_365d_obs12_adj <- exp(coef(cox_365d_obs12_full)["PMI_typeNoncardiac"])
-ci_365d_obs12_adj <- exp(confint(cox_365d_obs12_full)["PMI_typeNoncardiac",])
-p_365d_obs12_adj <- summary(cox_365d_obs12_full)$coefficients["PMI_typeNoncardiac", "Pr(>|z|)"]
-
-cat("\n=== COX REGRESSION MODELS - AGREED CASES ===\n")
-
-agreed_survival_cox <- agreed_survival %>%
-  mutate(
-    RCRI_high = if_else(RCRI_score > 1, 1, 0),
-    emergency_surg_factor = factor(emergency_surg, levels = c(0, 1), labels = c("Elective", "Emergency")),
-    RCRI_high_factor = factor(RCRI_high, levels = c(0, 1), labels = c("RCRI≤1", "RCRI>1")),
-    sex_factor = factor(gender_display, levels = c("Male", "Female")),
-    age_continuous = leeftijd
-  )
-
-cox_30d_agreed_unadj <- coxph(Surv(survival_time_30d, death_30d) ~ PMI_type, data = agreed_survival_cox)
-cox_30d_agreed_full <- coxph(Surv(survival_time_30d, death_30d) ~ PMI_type + age_continuous + sex_factor + emergency_surg_factor + RCRI_high_factor, data = agreed_survival_cox)
-cox_365d_agreed_unadj <- coxph(Surv(survival_time_365d, death_365d) ~ PMI_type, data = agreed_survival_cox)
-cox_365d_agreed_full <- coxph(Surv(survival_time_365d, death_365d) ~ PMI_type + age_continuous + sex_factor + emergency_surg_factor + RCRI_high_factor, data = agreed_survival_cox)
-
-# Extract adjusted HRs for display on plots
-hr_30d_agreed_adj <- exp(coef(cox_30d_agreed_full)["PMI_typeNoncardiac"])
-ci_30d_agreed_adj <- exp(confint(cox_30d_agreed_full)["PMI_typeNoncardiac",])
-p_30d_agreed_adj <- summary(cox_30d_agreed_full)$coefficients["PMI_typeNoncardiac", "Pr(>|z|)"]
-
-hr_365d_agreed_adj <- exp(coef(cox_365d_agreed_full)["PMI_typeNoncardiac"])
-ci_365d_agreed_adj <- exp(confint(cox_365d_agreed_full)["PMI_typeNoncardiac",])
-p_365d_agreed_adj <- summary(cox_365d_agreed_full)$coefficients["PMI_typeNoncardiac", "Pr(>|z|)"]
-
-# Extract HRs
-extract_hr <- function(model, model_name, outcome, dataset) {
-  coef_name <- "PMI_typeNoncardiac"
-  if(!coef_name %in% names(coef(model))) return(NULL)
-  
-  hr <- exp(coef(model)[coef_name])
-  ci <- exp(confint(model)[coef_name,])
-  p <- summary(model)$coefficients[coef_name, "Pr(>|z|)"]
-  
-  data.frame(
-    Dataset = dataset,
-    Outcome = outcome,
-    Model = model_name,
-    HR = round(hr, 2),
-    CI = paste0(round(hr, 2), " (", round(ci[1], 2), "-", round(ci[2], 2), ")"),
-    p_value = format.pval(p, digits = 3, eps = 0.001)
-  )
-}
-
-hr_table <- bind_rows(
-  extract_hr(cox_30d_obs12_unadj, "Unadjusted", "30-day", "OBS12"),
-  extract_hr(cox_30d_obs12_full, "Fully adjusted", "30-day", "OBS12"),
-  extract_hr(cox_365d_obs12_unadj, "Unadjusted", "365-day", "OBS12"),
-  extract_hr(cox_365d_obs12_full, "Fully adjusted", "365-day", "OBS12"),
-  extract_hr(cox_30d_agreed_unadj, "Unadjusted", "30-day", "Agreed"),
-  extract_hr(cox_30d_agreed_full, "Fully adjusted", "30-day", "Agreed"),
-  extract_hr(cox_365d_agreed_unadj, "Unadjusted", "365-day", "Agreed"),
-  extract_hr(cox_365d_agreed_full, "Fully adjusted", "365-day", "Agreed")
-)
-
-cat("\n=== HAZARD RATIOS: Noncardiac vs Cardiac ===\n")
-print(hr_table)
 
 # ========== POSTOPERATIVE VITALS: MORTALITY ANALYSIS ==========
 
@@ -1364,33 +1159,22 @@ cat("PMI Causes Distribution:\n")
 print(pmi_causes_chart_data %>% select(PMI_category_display, PMI_type, N, Percentage), n = Inf)
 cat("\n")
 
-cat("\n--- In-Hospital Mortality by PMI Category (Agreed Cases) ---\n\n")
-agreed_mortality_category <- agreed_survival %>%
-  group_by(PMI_category) %>%
-  summarise(
-    N = n(),
-    Deaths = sum(death_in_hospital == 1, na.rm = TRUE),
-    Mortality_pct = round(Deaths / N * 100, 1),
-    .groups = 'drop'
-  ) %>%
-  arrange(desc(N))
-print(agreed_mortality_category, n = Inf)
-
 cat("\n=== ANALYSIS COMPLETE ===\n")
-cat("\n✓ Comparison table: OBS12 vs Agreed PMI categories\n")
-cat("✓ PMI category overviews (noncardiac, cardiac, T2MI)\n")
-cat("✓ Surgical specialty analysis with p-values for cardiac vs noncardiac\n")
-cat("✓ Baseline characteristics tables\n")
-cat("✓ Surgical specialty p-values integrated into OBS12 and Agreed tables\n")
-cat("✓ Cox regression with adjusted HR\n")
-cat("✓ UNIFORM Date from data_included used for all survival calculations\n")
+cat("\n✓ Cohen's Kappa for PMI classification (OBS12 vs OBS34)\n")
+cat("✓ PMI category overviews for OBS12 (noncardiac, cardiac, T2MI)\n")
+cat("✓ Surgical specialty analysis with p-values for cardiac vs noncardiac (OBS12)\n")
+cat("✓ Baseline characteristics tables (All patients and OBS12 stratified)\n")
 cat("✓ Postoperative vitals analysis with hypotension/tachycardia detection\n")
 cat("✓ In-hospital mortality by vital sign threshold violations\n")
 cat("✓ Mortality tables for total cohort and cardiac PMI subgroup\n")
-cat("✓ **NEW: First hsTnT value coupled with admission location (specialty & ward)**\n")
-cat("✓ **NEW: Enhanced bar charts with cardiac vs noncardiac colors (#E64B35 & #4DBBD5)**\n")
-cat("✓ **NEW: Mortality by PMI aetiology bar charts**\n")
-cat("✓ **NEW: Combined vitals thresholds and mortality visualization**\n")
-cat("✓ **NEW: Stratified mortality analysis by PMI type and thresholds**\n")
-cat("✓ **NEW: Dual-panel figure showing PMI aetiology distribution and mortality**\n")
-cat("✓ Kaplan-Meier curves removed as requested\n")
+cat("✓ First hsTnT value coupled with admission location (specialty & ward)\n")
+cat("✓ Yearly analysis of first hsTnT values (2017-2023)\n")
+cat("✓ Enhanced bar charts with cardiac (#E64B35) vs noncardiac (#4DBBD5) colors\n")
+cat("✓ Mortality by PMI aetiology bar charts\n")
+cat("✓ Combined vitals thresholds and mortality visualization\n")
+cat("✓ Stratified mortality analysis by PMI type and thresholds\n")
+cat("✓ Dual-panel figure showing PMI aetiology distribution and mortality\n")
+cat("\n✗ Kaplan-Meier curves removed as requested\n")
+cat("✗ Cox regression models removed as requested\n")
+cat("✗ Agreed patient analyses removed (keeping only Cohen's Kappa)\n")
+cat("✗ TWA_hypotension removed (timing incorrect)\n")
