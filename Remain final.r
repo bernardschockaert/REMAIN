@@ -33,7 +33,7 @@ opname <- read_csv("Z:/REMAIN/Data export Datacapture/REMAIN - 2024-06-20 - opna
 lab <- read_csv("Z:/REMAIN/Data export Datacapture/REMAIN - 2024-06-20 - lab.csv")
 
 #Exclude LOTx, centrale lijn, minor eg gastroscopy, tropo incorrect, recent cardiac surgery/intervention, organ donation and old/insufficient file
-exclude_ids <- c(110014,110015,110028,110033,110051,110067,110068,110083,110096,110099,110100,110114,110117,110126,110131,110143,110148,110159,110160,110162,110166,110183,110187,110198,110205,110210,110214,110221,110222,110225,110230,110238,110251,110261,110270,110279,110287,110289,110300,110306,110308,110318,110330,110343,110347,110349,110352,110357,110368,110376,110378,110379,110382,110398,110399,110408,110416,110418,110431,110432,110443,110445,110451,110455,110456,110458,110470,110476,110487,110491,110515,110521,110544,110550,110553,110567,110573,110577,110586,110588,110608,110609,110614,110627,110635,110644,110669,110686,110694,110707,110719,110722,110726,110743,110747,110752,110753,110765,110774,110776,110783,110789,110827,110841,110864,110873,110876,110878,110879,110884,110891,110899,110908,110911,110914,110920,110922,110930,110931,110933,110941,110943,110948,110951,110953,110970,110973,110981,110983,110985,110987,110993,110995,110998,111001,111005,111009,111011,111012,111014,111026,111030,111032,111034,111038,111049,111053,111055,111056,111064,111070,111075,111076,111082,111087,111097,110248
+exclude_ids <- c(110014,110015,110028,110033,110051,110067,110068,110083,110096,110099,110100,110114,110117,110126,110131,110143,110148,110159,110160,110162,110166,110183,110187,110198,110205,110210,110214,110221,110222,110225,110230,110238,110251,110261,110270,110279,110287,110289,110300,110306,110308,110318,110330,110343,110347,110349,110352,110357,110368,110376,110378,110379,110382,110398,110399,110408,110416,110418,110431,110432,110443,110445,110451,110455,110456,110458,110470,110476,110487,110491,110515,110521,110544,110550,110553,110567,110573,110577,110586,110588,110608,110609,110614,110627,110635,110644,110669,110686,110694,110707,110719,110722,110726,110743,110747,110752,110753,110765,110774,110776,110783,110789,110826,110827,110841,110864,110873,110876,110878,110879,110884,110891,110899,110908,110911,110914,110920,110922,110930,110931,110933,110941,110943,110948,110951,110953,110970,110973,110981,110983,110985,110987,110993,110995,110998,111001,111005,111009,111011,111012,111014,111026,111027,111030,111032,111034,111038,111049,111053,111055,111056,111064,111070,111075,111076,111082,111087,111097,110248
 )
 
 cat("Total exclusion list:", length(exclude_ids), "\n")
@@ -65,18 +65,9 @@ data_included <- data_included %>%
             by = "Study_number") %>%
   left_join(demographics %>% select(pseudonym_value, leeftijd, gender_display, deceasedDateTime), 
             by = c("Pseudonym" = "pseudonym_value")) %>%
-  mutate(
-    deceasedDateTime = as.Date(as.POSIXct(deceasedDateTime, format = "%Y-%m-%d %H:%M:%S")),
-    time_to_death = as.numeric(difftime(deceasedDateTime, Date, units = "days"))
-  ) %>%
-  # CRITICAL: Calculate survival outcomes ONCE using Date from coupling
-  # These variables will be inherited by obs12_with_pmi
-  mutate(
-    death_30d = if_else(!is.na(time_to_death) & time_to_death <= 30, 1, 0),
-    survival_time_30d = if_else(is.na(time_to_death), 30, pmin(time_to_death, 30)),
-    death_365d = if_else(!is.na(time_to_death) & time_to_death <= 365, 1, 0),
-    survival_time_365d = if_else(is.na(time_to_death), 365, pmin(time_to_death, 365))
-  ) %>%
+  # Note: In-hospital mortality will be defined using opname_bestemming from opname data
+  # (not using deceasedDateTime from demographics)
+
   mutate(
     RCRI_CAD = if_else(`history#Coronary Artery Disease` == 1, 1, 0, missing = 0),
     RCRI_Stroke = if_else(`history#Stroke / TIA` == 1, 1, 0, missing = 0),
@@ -261,17 +252,37 @@ patient_hemodynamics <- vital_signs %>%
     .groups = "drop"
   )
 
-# Add in-hospital mortality variable based on time_to_death
-data_included <- data_included %>%
-  mutate(death_in_hospital = if_else(!is.na(time_to_death) & time_to_death <= 30, 1, 0))
-
 # Merge vital signs with obs12_with_pmi
 obs12_with_pmi <- obs12_with_pmi %>%
   left_join(patient_hemodynamics, by = c("Pseudonym" = "pseudonym_value"))
 
-# Add in-hospital mortality
+# ========== DEFINE IN-HOSPITAL MORTALITY USING OPNAME DATA ==========
+
+cat("\n\n=== DEFINING IN-HOSPITAL MORTALITY FROM OPNAME DATA ===\n\n")
+
+# Define in-hospital mortality based on opname_bestemming from opname data
+# Death = opname_bestemming is "Overleden (zonder obductie)" OR "Overleden (met obductie)"
+opname_mortality <- opname %>%
+  group_by(pseudonym_value) %>%
+  summarise(
+    death_in_hospital = if_else(
+      any(opname_bestemming %in% c("Overleden (zonder obductie)", "Overleden (met obductie)"), na.rm = TRUE),
+      1, 0
+    ),
+    .groups = "drop"
+  )
+
+cat("Patients with in-hospital death status from opname:", nrow(opname_mortality), "\n")
+cat("In-hospital deaths:", sum(opname_mortality$death_in_hospital == 1, na.rm = TRUE), "\n\n")
+
+# Merge with obs12_with_pmi
 obs12_with_pmi <- obs12_with_pmi %>%
-  mutate(death_in_hospital = if_else(!is.na(time_to_death) & time_to_death <= 30, 1, 0))
+  left_join(opname_mortality, by = c("Pseudonym" = "pseudonym_value"))
+
+cat("OBS12_with_PMI patients with in-hospital death status:",
+    sum(!is.na(obs12_with_pmi$death_in_hospital)), "\n")
+cat("OBS12_with_PMI in-hospital deaths:",
+    sum(obs12_with_pmi$death_in_hospital == 1, na.rm = TRUE), "\n\n")
 
 # Summary statistics for vital sign thresholds
 vitals_summary <- patient_hemodynamics %>%
@@ -586,7 +597,7 @@ vars_for_table <- c("leeftijd", "gender_display", "emergency_surg", "surg_specia
                     "history#Moderate/Severe Valvular Disease", "history#Diabetus Mellitus, non-insulin",
                     "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
                     "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease",
-                    "RCRI_score", "death_30d", "death_365d")
+                    "RCRI_score")
 
 cat_vars <- c("gender_display", "emergency_surg", "surg_specialty",
               "history#Coronary Artery Disease", "history#Myocardial Infarction",
@@ -594,8 +605,7 @@ cat_vars <- c("gender_display", "emergency_surg", "surg_specialty",
               "history#Chronic Heart Failure", "history#Atrial Fibrilation",
               "history#Moderate/Severe Valvular Disease", "history#Diabetus Mellitus, non-insulin",
               "history#Diabetus Mellitus, insulin dependent", "history#Chronic Kidney Disease",
-              "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease",
-              "death_30d", "death_365d")
+              "history#Hypertension", "history#Chronic Obstructive Pulmonary Disease")
 
 # Table 1: All included patients
 cat("\n=== TABLE 1: ALL INCLUDED PATIENTS ===\n")
@@ -1034,6 +1044,20 @@ print(obs12_mortality_category, n = Inf)
 
 cat("\n--- Creating Bar Chart of PMI Causes (OBS12) ---\n")
 
+# Check for NA PMI categories
+cat("OBS12_with_PMI total patients:", nrow(obs12_with_pmi), "\n")
+cat("Patients with NA PMI_category:", sum(is.na(obs12_with_pmi$PMI_category)), "\n")
+if(sum(is.na(obs12_with_pmi$PMI_category)) > 0) {
+  cat("Patients with NA PMI_category (showing first 5):\n")
+  na_pmi_patients <- obs12_with_pmi %>%
+    filter(is.na(PMI_category)) %>%
+    select(Pseudonym, PMI_type, cause_extra_car_yes, Cause_cardiac_yes, cause_T2MI,
+           cause_extra_car, cause_cardiac, PMI_category) %>%
+    head(5)
+  print(na_pmi_patients)
+  cat("\n")
+}
+
 # Prepare data for bar chart with in-hospital mortality
 pmi_causes_chart_data <- obs12_with_pmi %>%
   filter(!is.na(PMI_category)) %>%  # Exclude NA PMI categories
@@ -1054,7 +1078,7 @@ pmi_causes_chart_data <- obs12_with_pmi %>%
       PMI_category == "ctrauma" ~ "Trauma",
       PMI_category == "stroke" ~ "Stroke",
       PMI_category == "sepsis" ~ "Sepsis",
-      PMI_category == "tachy" ~ "Tachyarrhythmia",
+      PMI_category == "tachy" ~ "non sinus tachycardia",
       PMI_category == "ex_car_other" ~ "Other",
       TRUE ~ as.character(PMI_category)
     )
@@ -1165,7 +1189,8 @@ cat("✓ PMI category overviews for OBS12 (noncardiac, cardiac, T2MI)\n")
 cat("✓ Surgical specialty analysis with p-values for cardiac vs noncardiac (OBS12)\n")
 cat("✓ Baseline characteristics tables (All patients and OBS12 stratified)\n")
 cat("✓ Postoperative vitals analysis with hypotension/tachycardia detection\n")
-cat("✓ In-hospital mortality by vital sign threshold violations\n")
+cat("✓ In-hospital mortality defined from opname_bestemming (not deceasedDateTime)\n")
+cat("✓ Mortality by vital sign threshold violations\n")
 cat("✓ Mortality tables for total cohort and cardiac PMI subgroup\n")
 cat("✓ First hsTnT value coupled with admission location (specialty & ward)\n")
 cat("✓ Yearly analysis of first hsTnT values (2017-2023)\n")
@@ -1174,7 +1199,10 @@ cat("✓ Mortality by PMI aetiology bar charts\n")
 cat("✓ Combined vitals thresholds and mortality visualization\n")
 cat("✓ Stratified mortality analysis by PMI type and thresholds\n")
 cat("✓ Dual-panel figure showing PMI aetiology distribution and mortality\n")
+cat("✓ Exclusion list updated: 159 patients (added 110826, 111027)\n")
+cat("✓ Renamed 'Tachyarrhythmia' to 'non sinus tachycardia'\n")
 cat("\n✗ Kaplan-Meier curves removed as requested\n")
 cat("✗ Cox regression models removed as requested\n")
 cat("✗ Agreed patient analyses removed (keeping only Cohen's Kappa)\n")
 cat("✗ TWA_hypotension removed (timing incorrect)\n")
+cat("✗ death_30d and death_365d removed as requested\n")
