@@ -1943,14 +1943,14 @@ km_data <- obs12_with_pmi %>%
   left_join(
     opname %>%
       mutate(
-        opname_begindatum = as.Date(opname_begindatum),
-        opname_einddatum = as.Date(opname_einddatum),
+        opnamedatum = as.Date(opnamedatum),
+        ontslagdatum = as.Date(ontslagdatum),
         died_in_hospital = opname_bestemming %in% c("Overleden (zonder obductie)", "Overleden (met obductie)")
       ) %>%
       group_by(pseudonym_value) %>%
       summarise(
-        admission_date = min(opname_begindatum, na.rm = TRUE),
-        discharge_date = max(opname_einddatum, na.rm = TRUE),
+        admission_date = min(opnamedatum, na.rm = TRUE),
+        discharge_date = max(ontslagdatum, na.rm = TRUE),
         died = any(died_in_hospital),
         .groups = "drop"
       ),
@@ -2047,14 +2047,14 @@ cr_data <- obs12_with_pmi %>%
   left_join(
     opname %>%
       mutate(
-        opname_begindatum = as.Date(opname_begindatum),
-        opname_einddatum = as.Date(opname_einddatum),
+        opnamedatum = as.Date(opnamedatum),
+        ontslagdatum = as.Date(ontslagdatum),
         died_in_hospital = opname_bestemming %in% c("Overleden (zonder obductie)", "Overleden (met obductie)")
       ) %>%
       group_by(pseudonym_value) %>%
       summarise(
-        admission_date = min(opname_begindatum, na.rm = TRUE),
-        discharge_date = max(opname_einddatum, na.rm = TRUE),
+        admission_date = min(opnamedatum, na.rm = TRUE),
+        discharge_date = max(ontslagdatum, na.rm = TRUE),
         died = any(died_in_hospital),
         .groups = "drop"
       ),
