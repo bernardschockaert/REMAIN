@@ -2127,7 +2127,7 @@ cr_data_fg <- cr_data %>%
   mutate(
     cardiac_group = if_else(PMI_type == "Cardiac", 1, 0),
     age = as.numeric(leeftijd),
-    female = if_else(gender_display == "Vrouw", 1, 0),
+    female = if_else(gender_display == "Female", 1, 0),
     emergency = as.numeric(emergency_surg)
   ) %>%
   filter(!is.na(age) & !is.na(female) & !is.na(emergency))
@@ -2489,7 +2489,7 @@ logistic_data <- obs12_with_pmi %>%
   mutate(
     PMI_type = factor(PMI_type, levels = c("Noncardiac", "Cardiac")),
     age = as.numeric(leeftijd),
-    female = if_else(gender_display == "Vrouw", 1, 0),
+    female = if_else(gender_display == "Female", 1, 0),
     emergency = as.numeric(emergency_surg),
     has_CAD = as.numeric(`history#Coronary Artery Disease`),
     has_CHF = as.numeric(`history#Chronic Heart Failure`),
