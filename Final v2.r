@@ -2116,9 +2116,10 @@ cat("Saved as 'KM_30day_Extracardiac_PMI.png'\n")
 # ========== ANALYSIS 2: COMPETING RISKS ANALYSIS ==========
 # Addresses bias from informative censoring (discharge alive competes with death)
 
-cat("\n\n=== ANALYSIS 2: COMPETING RISKS ANALYSIS (30-DAY IN-HOSPITAL) ===\n")
+cat("\n\n=== ANALYSIS 2: COMPETING RISKS ANALYSIS (IN-HOSPITAL, FULL FOLLOW-UP) ===\n")
 cat("Addresses informative censoring bias from KM analysis\n")
-cat("Events: 1 = in-hospital death, 2 = discharge alive, 0 = still hospitalized at day 30\n\n")
+cat("Events: 1 = in-hospital death, 2 = discharge alive\n")
+cat("No administrative censoring at 30 days - uses full hospitalisation follow-up\n\n")
 
 # Build competing risks data
 cr_data <- obs12_with_pmi %>%
@@ -2142,34 +2143,37 @@ cr_data <- obs12_with_pmi %>%
   filter(!is.na(admission_date) & !is.na(surgery_date_verr)) %>%
   mutate(
     surgery_date = surgery_date_verr,
+    # Note: for patients who died, discharge_date reflects the death/discharge date
+    # (opname_bestemming = "Overleden") so days_to_end = time to death for died==TRUE
     days_to_end = as.numeric(discharge_date - surgery_date),
     days_to_end = pmax(days_to_end, 0),
-    # Competing risks status: 0 = censored at 30, 1 = death, 2 = discharged alive
+    # Competing risks status: 1 = in-hospital death, 2 = discharged alive
+    # No administrative censoring - all patients have an observed event
     cr_status = case_when(
-      died & days_to_end <= 30 ~ 1,              # died in hospital within 30 days
-      !died & days_to_end <= 30 ~ 2,             # discharged alive within 30 days
-      TRUE ~ 0                                    # still hospitalized at day 30 (censored)
+      died ~ 1L,                                  # died in hospital
+      TRUE ~ 2L                                   # discharged alive
     ),
-    cr_time = case_when(
-      cr_status == 0 ~ 30,                       # censored at day 30
-      TRUE ~ pmin(days_to_end, 30)               # event time
-    ),
-    cr_time = pmax(cr_time, 0.5)                 # avoid zero times for CIF estimation
+    cr_time = days_to_end,
+    cr_time = pmax(cr_time, 0.01)                 # small epsilon to avoid zero times
   ) %>%
   filter(!is.na(cr_time) & !is.na(PMI_type))
 
 cat("Patients in competing risks analysis:", nrow(cr_data), "\n")
-cat("  Status 0 (still hospitalized at day 30):", sum(cr_data$cr_status == 0), "\n")
 cat("  Status 1 (in-hospital death):", sum(cr_data$cr_status == 1), "\n")
 cat("  Status 2 (discharged alive):", sum(cr_data$cr_status == 2), "\n")
 cat("  Cardiac PMI:", sum(cr_data$PMI_type == "Cardiac"), "\n")
-cat("  Extracardiac PMI:", sum(cr_data$PMI_type == "Noncardiac"), "\n\n")
+cat("  Extracardiac PMI:", sum(cr_data$PMI_type == "Noncardiac" | cr_data$PMI_type == "Extracardiac"), "\n")
+cat("  Median follow-up (days):", round(median(cr_data$cr_time, na.rm = TRUE), 1), "\n")
+cat("  Max follow-up (days):", round(max(cr_data$cr_time, na.rm = TRUE), 1), "\n\n")
 
 # --- Cumulative Incidence Functions (CIF) ---
 cat("--- Cumulative Incidence Functions ---\n\n")
 
-# Create group variable
-cr_group <- factor(cr_data$PMI_type, levels = c("Cardiac", "Noncardiac"))
+# Create group variable - recode Noncardiac to Extracardiac for consistency
+cr_group <- factor(
+  ifelse(cr_data$PMI_type == "Noncardiac", "Extracardiac", as.character(cr_data$PMI_type)),
+  levels = c("Cardiac", "Extracardiac")
+)
 
 # Calculate CIF
 cif_fit <- cuminc(ftime = cr_data$cr_time,
@@ -2186,16 +2190,23 @@ cat("\n--- Gray's Test ---\n")
 cat("Comparing cumulative incidence between Cardiac and Extracardiac PMI\n\n")
 
 # Gray's test results are embedded in cuminc output
+# Extract by rowname (failcode) to avoid index-order assumptions
 gray_tests <- cif_fit$Tests
-cat("Gray's test for in-hospital DEATH:\n")
-cat("  Statistic:", round(gray_tests[1, "stat"], 3), "\n")
-cat("  P-value:", format.pval(gray_tests[1, "pv"], digits = 3), "\n")
-cat("\nGray's test for DISCHARGE ALIVE:\n")
-cat("  Statistic:", round(gray_tests[2, "stat"], 3), "\n")
-cat("  P-value:", format.pval(gray_tests[2, "pv"], digits = 3), "\n\n")
+cat("Gray's test row names:", paste(rownames(gray_tests), collapse = ", "), "\n\n")
 
-gray_p_death <- gray_tests[1, "pv"]
-gray_p_discharge <- gray_tests[2, "pv"]
+# Match by failcode in rowname (failcode 1 = death, 2 = discharge)
+death_row <- grep("1$", rownames(gray_tests))
+discharge_row <- grep("2$", rownames(gray_tests))
+
+cat("Gray's test for in-hospital DEATH:\n")
+cat("  Statistic:", round(gray_tests[death_row, "stat"], 3), "\n")
+cat("  P-value:", format.pval(gray_tests[death_row, "pv"], digits = 3), "\n")
+cat("\nGray's test for DISCHARGE ALIVE:\n")
+cat("  Statistic:", round(gray_tests[discharge_row, "stat"], 3), "\n")
+cat("  P-value:", format.pval(gray_tests[discharge_row, "pv"], digits = 3), "\n\n")
+
+gray_p_death <- gray_tests[death_row, "pv"]
+gray_p_discharge <- gray_tests[discharge_row, "pv"]
 
 # --- Fine-Gray Regression Models ---
 cat("\n--- Fine-Gray Subdistribution Hazard Regression ---\n\n")
@@ -2359,28 +2370,32 @@ for (nm in names(cif_fit)) {
   cif_plot_data <- rbind(cif_plot_data, df_tmp)
 }
 
-# Filter to 0-30 days
-cif_plot_data <- cif_plot_data %>%
-  filter(time <= 30)
+# Determine x-axis max from data (round up to nearest 10)
+max_follow_up <- ceiling(max(cif_plot_data$time, na.rm = TRUE) / 10) * 10
 
 # Panel A: Cumulative incidence of in-hospital death
 panel_a_data <- cif_plot_data %>% filter(event == "Death")
 
+# Dynamic y-axis: round up max CIF to nearest 5%
+max_death_cif <- max(panel_a_data$est * 100, na.rm = TRUE)
+y_max_death <- ceiling(max_death_cif / 5) * 5
+y_max_death <- max(y_max_death, 5)  # at least 5%
+y_breaks_death <- seq(0, y_max_death, by = ifelse(y_max_death <= 20, 5, 10))
+
 panel_a <- ggplot(panel_a_data, aes(x = time, y = est * 100, color = group)) +
   geom_step(linewidth = 1) +
   scale_color_manual(
-    values = c("Cardiac" = "#E64B35", "Noncardiac" = "#4DBBD5"),
-    labels = c("Cardiac" = "Cardiac", "Noncardiac" = "Extracardiac")
+    values = c("Cardiac" = "#E64B35", "Extracardiac" = "#4DBBD5")
   ) +
-  scale_x_continuous(limits = c(0, 30), breaks = seq(0, 30, 5)) +
-  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, 2)) +
+  scale_x_continuous(limits = c(0, max_follow_up), breaks = seq(0, max_follow_up, 5)) +
+  scale_y_continuous(limits = c(0, y_max_death), breaks = y_breaks_death) +
   labs(
     title = "A) Cumulative Incidence of In-Hospital Death",
     x = "Days from surgery",
     y = "Cumulative incidence (%)",
     color = "PMI Aetiology"
   ) +
-  annotate("text", x = 15, y = 9,
+  annotate("text", x = max_follow_up * 0.5, y = y_max_death * 0.9,
            label = paste0("Gray's test p = ", format.pval(gray_p_death, digits = 3)),
            size = 3.5, hjust = 0) +
   theme_minimal() +
@@ -2399,10 +2414,9 @@ panel_b_data <- cif_plot_data %>% filter(event == "Discharge Alive")
 panel_b <- ggplot(panel_b_data, aes(x = time, y = est * 100, color = group)) +
   geom_step(linewidth = 1) +
   scale_color_manual(
-    values = c("Cardiac" = "#E64B35", "Noncardiac" = "#4DBBD5"),
-    labels = c("Cardiac" = "Cardiac", "Noncardiac" = "Extracardiac")
+    values = c("Cardiac" = "#E64B35", "Extracardiac" = "#4DBBD5")
   ) +
-  scale_x_continuous(limits = c(0, 30), breaks = seq(0, 30, 5)) +
+  scale_x_continuous(limits = c(0, max_follow_up), breaks = seq(0, max_follow_up, 5)) +
   scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 20)) +
   labs(
     title = "B) Cumulative Incidence of Discharge Alive",
@@ -2410,7 +2424,7 @@ panel_b <- ggplot(panel_b_data, aes(x = time, y = est * 100, color = group)) +
     y = "Cumulative incidence (%)",
     color = "PMI Aetiology"
   ) +
-  annotate("text", x = 15, y = 90,
+  annotate("text", x = max_follow_up * 0.5, y = 90,
            label = paste0("Gray's test p = ", format.pval(gray_p_discharge, digits = 3)),
            size = 3.5, hjust = 0) +
   theme_minimal() +
