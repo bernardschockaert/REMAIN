@@ -97,7 +97,8 @@ data_final <- data_included%>%
     no_cv_history = if_else(rowSums(across(all_of(history_vars)) == 1) == 0, 1,0)
   )%>%
   ungroup()%>%
-  mutate(Observer_Group = if_else(`Site Abbreviation` %in% c("OBS1","OBS2"), "OBS12", "OBS34"))
+  mutate(Observer_Group = if_else(`Site Abbreviation` %in% c("OBS1","OBS2"), "OBS12", "OBS34"),
+         cause_T2MI = if_else(cause_extra_car_yes == 0 & Cause_cardiac_yes == 0, 1, 0))
 
 #Compare OBS12 and OBS34
 obs12 <- data_final %>% filter(Observer_Group == "OBS12")
