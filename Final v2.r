@@ -1932,7 +1932,13 @@ cat("      Patients discharged alive are censored at day of discharge.\n")
 cat("      Patients still hospitalized at day 30 are censored at day 30.\n\n")
 
 # Build time-to-event data from opname
-# Need: surgery date (from verrichtingen or Date), discharge/death date, and outcome
+# Surgery date from verrichtingen (performedPeriod_end) as time zero
+# First prepare surgery dates from verrichtingen
+surgery_dates_km <- verrichtingen %>%
+  mutate(surgery_date_verr = as.Date(as.character(performedPeriod_end))) %>%
+  group_by(pseudonym_value) %>%
+  summarise(surgery_date_verr = min(surgery_date_verr, na.rm = TRUE), .groups = "drop")
+
 km_data <- obs12_with_pmi %>%
   left_join(
     opname %>%
@@ -1950,10 +1956,11 @@ km_data <- obs12_with_pmi %>%
       ),
     by = c("Pseudonym" = "pseudonym_value")
   ) %>%
-  filter(!is.na(admission_date)) %>%
+  left_join(surgery_dates_km, by = c("Pseudonym" = "pseudonym_value")) %>%
+  filter(!is.na(admission_date) & !is.na(surgery_date_verr)) %>%
   mutate(
-    # Use Date (troponin/surgery reference date) as time zero
-    surgery_date = as.Date(Date),
+    # Use performedPeriod_end from verrichtingen as time zero
+    surgery_date = surgery_date_verr,
     # Time from surgery to end of follow-up
     time_to_event = as.numeric(
       pmin(discharge_date, surgery_date + 30, na.rm = TRUE) - surgery_date
@@ -2053,9 +2060,10 @@ cr_data <- obs12_with_pmi %>%
       ),
     by = c("Pseudonym" = "pseudonym_value")
   ) %>%
-  filter(!is.na(admission_date)) %>%
+  left_join(surgery_dates_km, by = c("Pseudonym" = "pseudonym_value")) %>%
+  filter(!is.na(admission_date) & !is.na(surgery_date_verr)) %>%
   mutate(
-    surgery_date = as.Date(Date),
+    surgery_date = surgery_date_verr,
     days_to_end = as.numeric(discharge_date - surgery_date),
     days_to_end = pmax(days_to_end, 0),
     # Competing risks status: 0 = censored at 30, 1 = death, 2 = discharged alive
@@ -2317,7 +2325,7 @@ cat("Days to peak calculated from surgery date in verrichtingen\n\n")
 # Get surgery date from verrichtingen per pseudonym_value
 surgery_dates <- verrichtingen %>%
   mutate(
-    surgery_date_verr = as.Date(as.character(verrichting_begindatumtijd))
+    surgery_date_verr = as.Date(as.character(performedPeriod_end))
   ) %>%
   group_by(pseudonym_value) %>%
   summarise(
