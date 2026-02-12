@@ -2674,7 +2674,6 @@ nonagreed_detail <- nonagreed %>%
       select(`Participant Id`,
              extra_12_detail = cause_extra_car,
              cardiac_12_detail = cause_cardiac,
-             T2MI_12 = cause_T2MI,
              cause_extra_car_yes_12 = cause_extra_car_yes,
              Cause_cardiac_yes_12 = Cause_cardiac_yes) %>%
       distinct(`Participant Id`, .keep_all = TRUE),
@@ -2685,7 +2684,6 @@ nonagreed_detail <- nonagreed %>%
       select(`Participant Id`,
              extra_34_detail = cause_extra_car,
              cardiac_34_detail = cause_cardiac,
-             T2MI_34 = cause_T2MI,
              cause_extra_car_yes_34 = cause_extra_car_yes,
              Cause_cardiac_yes_34 = Cause_cardiac_yes) %>%
       distinct(`Participant Id`, .keep_all = TRUE),
