@@ -2546,6 +2546,55 @@ days_to_peak_dist <- peak_hstnt_included %>%
   mutate(Percentage = round(n / sum(n) * 100, 1))
 print(days_to_peak_dist, n = Inf)
 
+# --- Day-by-day summary of peak hsTnT occurrence ---
+cat("\n--- Day-by-Day Summary: When Peak hsTnT Occurs (Overall) ---\n")
+day_by_day_overall <- peak_hstnt_included %>%
+  mutate(peak_day = as.integer(days_to_peak)) %>%
+  group_by(peak_day) %>%
+  summarise(
+    N = n(),
+    Median_peak_hsTnT = round(median(peak_hstnt_value, na.rm = TRUE), 1),
+    IQR_lower = round(quantile(peak_hstnt_value, 0.25, na.rm = TRUE), 1),
+    IQR_upper = round(quantile(peak_hstnt_value, 0.75, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) %>%
+  arrange(peak_day) %>%
+  mutate(Percentage = round(N / sum(N) * 100, 1))
+cat("Peak day | N (%) | Median hsTnT [IQR]\n")
+print(day_by_day_overall, n = Inf)
+
+# --- Day-by-day summary stratified by PMI type ---
+cat("\n--- Day-by-Day Summary: When Peak hsTnT Occurs (by PMI Type) ---\n")
+day_by_day_pmi <- peak_hstnt_included %>%
+  mutate(peak_day = as.integer(days_to_peak)) %>%
+  group_by(PMI_type, peak_day) %>%
+  summarise(
+    N = n(),
+    Median_peak_hsTnT = round(median(peak_hstnt_value, na.rm = TRUE), 1),
+    IQR_lower = round(quantile(peak_hstnt_value, 0.25, na.rm = TRUE), 1),
+    IQR_upper = round(quantile(peak_hstnt_value, 0.75, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) %>%
+  arrange(PMI_type, peak_day)
+
+# Add percentage within each PMI type
+day_by_day_pmi <- day_by_day_pmi %>%
+  group_by(PMI_type) %>%
+  mutate(Percentage = round(N / sum(N) * 100, 1)) %>%
+  ungroup()
+
+cat("\nCardiac PMI:\n")
+print(day_by_day_pmi %>% filter(PMI_type == "Cardiac") %>% select(-PMI_type), n = Inf)
+cat("\nExtracardiac PMI:\n")
+print(day_by_day_pmi %>% filter(PMI_type == "Noncardiac") %>% select(-PMI_type), n = Inf)
+
+# Cumulative percentage by day
+cat("\n--- Cumulative Percentage of Peak hsTnT by Day ---\n")
+cumul_overall <- day_by_day_overall %>%
+  mutate(Cumulative_pct = round(cumsum(N) / sum(N) * 100, 1)) %>%
+  select(peak_day, N, Percentage, Cumulative_pct)
+print(cumul_overall, n = Inf)
+
 # Merge peak hsTnT data back to obs12_with_pmi for downstream use
 obs12_with_pmi <- obs12_with_pmi %>%
   left_join(
