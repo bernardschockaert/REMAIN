@@ -196,9 +196,11 @@ obs12_before_filter <- obs12 %>%
 cat("OBS12 before PMI_type filter:", nrow(obs12_before_filter), "\n")
 cat("OBS12 with NA PMI_type:", sum(is.na(obs12_before_filter$PMI_type)), "\n")
 
+# Sort by Date (troponin reference date) so distinct keeps the index event row
 obs12_with_pmi <- obs12_before_filter %>%
   filter(!is.na(PMI_type)) %>%
   filter(!is.na(Pseudonym)) %>%
+  arrange(Pseudonym, Date) %>%
   distinct(Pseudonym, .keep_all = TRUE)
 
 cat("OBS12_with_PMI after filter:", nrow(obs12_with_pmi), "\n")
@@ -210,11 +212,12 @@ agreed_with_pmi <- obs12 %>%
   inner_join(agreed_patients, by = "Participant Id") %>%
   filter(!is.na(PMI_type))
 
-# Agreed survival - one row per patient
+# Agreed survival - one row per patient (sorted by index event date)
 agreed_survival <- obs12 %>%
   inner_join(agreed_patients, by = "Participant Id") %>%
   filter(!is.na(PMI_type)) %>%
   filter(!is.na(Pseudonym)) %>%
+  arrange(Pseudonym, Date) %>%
   distinct(Pseudonym, .keep_all = TRUE)
 
 # ========== POSTOPERATIVE VITALS PROCESSING ==========
@@ -240,8 +243,9 @@ nibp_data <- hemodynamics %>%
 # Combine: use ABP when available, NIBP only when ABP missing
 bp_data <- abp_data %>%
   bind_rows(nibp_data) %>%
+  mutate(source = factor(source, levels = c("ABP", "NIBP"))) %>%
   group_by(pseudonym_value, effectiveDateTime) %>%
-  arrange(desc(source)) %>%  # ABP comes before NIBP alphabetically
+  arrange(source) %>%  # ABP (level 1) preferred over NIBP (level 2)
   slice(1) %>%  # Take first (ABP if present, else NIBP)
   ungroup() %>%
   select(pseudonym_value, effectiveDateTime, MAP)
@@ -338,9 +342,32 @@ first_hstnt <- lab %>%
          first_hstnt_datetime = collection_collectedDateTime)
 
 # Couple with ward location from opname based on pseudonym_value
+# Collapse opname to 1 row per patient: pick the admission that contains the first hsTnT datetime
+# (i.e., opnamedatum <= hsTnT datetime <= ontslagdatum), or closest admission if none matches
+opname_one_per_patient <- opname %>%
+  mutate(
+    opnamedatum = as.Date(opnamedatum),
+    ontslagdatum = as.Date(ontslagdatum)
+  ) %>%
+  select(pseudonym_value, specialty_display_original, opnamedeel_afdeling,
+         opnamedatum, ontslagdatum)
+
 hstnt_location <- first_hstnt %>%
-  left_join(opname %>% select(pseudonym_value, specialty_display_original, opnamedeel_afdeling),
-            by = "pseudonym_value")
+  left_join(opname_one_per_patient, by = "pseudonym_value") %>%
+  mutate(
+    hstnt_date = as.Date(first_hstnt_datetime),
+    # Flag: is the hsTnT date within this admission?
+    within_admission = hstnt_date >= opnamedatum & hstnt_date <= ontslagdatum,
+    # Distance to admission start (for tiebreaking)
+    days_from_admission = abs(as.numeric(hstnt_date - opnamedatum))
+  ) %>%
+  # Prefer the admission that contains the hsTnT date; if none, use closest
+  arrange(pseudonym_value, desc(within_admission), days_from_admission) %>%
+  group_by(pseudonym_value) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(pseudonym_value, first_hstnt_value, first_hstnt_datetime,
+         specialty_display_original, opnamedeel_afdeling)
 
 obs12_with_pmi <- obs12_with_pmi %>%
   left_join(hstnt_location, by = c("Pseudonym" = "pseudonym_value"))
@@ -562,63 +589,49 @@ print(comparison_categories, n = Inf)
 cat("\n\n=== SURGICAL SPECIALTY ANALYSIS: CARDIAC vs NONCARDIAC (OBS12) ===\n\n")
 
 # Function to compute p-value for cardiac vs noncardiac by specialty
+# Uses a proper 2x2 table: (this specialty vs all others) x (cardiac vs noncardiac)
+# Chi-square for N >= 20, Fisher's exact for N < 20 or when expected counts < 5
 compute_specialty_pvalue <- function(data, specialty_col = "surg_specialty", pmi_col = "PMI_type") {
-  # Get unique specialties
   specialties <- unique(data[[specialty_col]])
   specialties <- specialties[!is.na(specialties)]
-  
+
   results <- data.frame()
-  
+
   for(spec in specialties) {
-    spec_data <- data %>% filter(!!sym(specialty_col) == spec)
-    
-    # Count cardiac and noncardiac
-    n_cardiac <- sum(spec_data[[pmi_col]] == "Cardiac", na.rm = TRUE)
-    n_noncardiac <- sum(spec_data[[pmi_col]] == "Noncardiac", na.rm = TRUE)
+    n_cardiac <- sum(data[[specialty_col]] == spec & data[[pmi_col]] == "Cardiac", na.rm = TRUE)
+    n_noncardiac <- sum(data[[specialty_col]] == spec & data[[pmi_col]] == "Noncardiac", na.rm = TRUE)
     n_total <- n_cardiac + n_noncardiac
-    
-    # Compute p-value using chi-square test if sufficient numbers
-    if(n_total >= 5 && n_cardiac > 0 && n_noncardiac > 0) {
-      # Create contingency table
-      spec_table <- table(spec_data[[pmi_col]])
-      
-      # If we have both cardiac and noncardiac, perform chi-square test
-      # Compare to overall proportions
-      overall_prop_cardiac <- sum(data[[pmi_col]] == "Cardiac", na.rm = TRUE) / 
-                              (sum(data[[pmi_col]] == "Cardiac", na.rm = TRUE) + 
-                               sum(data[[pmi_col]] == "Noncardiac", na.rm = TRUE))
-      
-      # Expected counts
-      expected_cardiac <- n_total * overall_prop_cardiac
-      expected_noncardiac <- n_total * (1 - overall_prop_cardiac)
-      
-      # Chi-square statistic
-      chi_sq <- ((n_cardiac - expected_cardiac)^2 / expected_cardiac) + 
-                ((n_noncardiac - expected_noncardiac)^2 / expected_noncardiac)
-      p_value <- pchisq(chi_sq, df = 1, lower.tail = FALSE)
-      
-      # Fisher's exact test as alternative for small samples
-      if(n_total < 20) {
-        # Create 2x2 contingency table
-        other_cardiac <- sum(data[[pmi_col]] == "Cardiac", na.rm = TRUE) - n_cardiac
-        other_noncardiac <- sum(data[[pmi_col]] == "Noncardiac", na.rm = TRUE) - n_noncardiac
-        
-        fisher_table <- matrix(c(n_cardiac, n_noncardiac, 
-                                 other_cardiac, other_noncardiac), 
-                               nrow = 2, byrow = TRUE)
-        fisher_test <- fisher.test(fisher_table)
-        p_value_fisher <- fisher_test$p.value
-      } else {
-        p_value_fisher <- NA
-      }
-    } else {
-      p_value <- NA
-      p_value_fisher <- NA
+
+    # Guard against zero total
+    if(n_total == 0) {
+      results <- rbind(results, data.frame(
+        Specialty = spec, N_Total = 0, N_Cardiac = 0, Pct_Cardiac = NA,
+        N_Noncardiac = 0, Pct_Noncardiac = NA, P_value = NA))
+      next
     }
-    
+
     pct_cardiac <- round(n_cardiac / n_total * 100, 1)
     pct_noncardiac <- round(n_noncardiac / n_total * 100, 1)
-    
+
+    # Build 2x2 contingency table: (specialty vs rest) x (cardiac vs noncardiac)
+    other_cardiac <- sum(data[[specialty_col]] != spec & data[[pmi_col]] == "Cardiac", na.rm = TRUE)
+    other_noncardiac <- sum(data[[specialty_col]] != spec & data[[pmi_col]] == "Noncardiac", na.rm = TRUE)
+
+    cont_table <- matrix(
+      c(n_cardiac, other_cardiac, n_noncardiac, other_noncardiac),
+      nrow = 2, dimnames = list(c("This specialty", "Other"), c("Cardiac", "Noncardiac"))
+    )
+
+    # Use Fisher's exact test for small samples; chi-square otherwise
+    p_value <- NA
+    if(n_total >= 5 && (n_cardiac > 0 || n_noncardiac > 0)) {
+      if(n_total < 20 || any(chisq.test(cont_table, correct = FALSE)$expected < 5)) {
+        p_value <- fisher.test(cont_table)$p.value
+      } else {
+        p_value <- chisq.test(cont_table, correct = FALSE)$p.value
+      }
+    }
+
     results <- rbind(results, data.frame(
       Specialty = spec,
       N_Total = n_total,
@@ -626,11 +639,10 @@ compute_specialty_pvalue <- function(data, specialty_col = "surg_specialty", pmi
       Pct_Cardiac = pct_cardiac,
       N_Noncardiac = n_noncardiac,
       Pct_Noncardiac = pct_noncardiac,
-      P_value_ChiSq = ifelse(is.na(p_value), NA, format.pval(p_value, digits = 3)),
-      P_value_Fisher = ifelse(is.na(p_value_fisher), NA, format.pval(p_value_fisher, digits = 3))
+      P_value = ifelse(is.na(p_value), NA, format.pval(p_value, digits = 3))
     ))
   }
-  
+
   return(results)
 }
 
@@ -726,18 +738,17 @@ print(table2_obs12, nonnormal = nonnormal_vars, showAllLevels = TRUE, formatOpti
 
 # **NEW: Add surgical specialty p-values for OBS12**
 cat("\n\n--- SURGICAL SPECIALTY P-VALUES FOR OBS12 ---\n")
-cat("P-values comparing Cardiac vs Noncardiac proportions within each specialty:\n\n")
+cat("P-values from 2x2 table (this specialty vs rest) x (cardiac vs noncardiac):\n\n")
 obs12_specialty_pval_table <- obs12_specialty_results %>%
-  select(Specialty, N_Total, N_Cardiac, N_Noncardiac, P_value_ChiSq, P_value_Fisher) %>%
+  select(Specialty, N_Total, N_Cardiac, N_Noncardiac, P_value) %>%
   rename(
     "Total N" = N_Total,
     "Cardiac N" = N_Cardiac,
     "Noncardiac N" = N_Noncardiac,
-    "P (Chi-square)" = P_value_ChiSq,
-    "P (Fisher)" = P_value_Fisher
+    "P value" = P_value
   )
 print(obs12_specialty_pval_table, row.names = FALSE)
-cat("\nNote: Fisher's exact test is used when N < 20; Chi-square test otherwise.\n")
+cat("\nNote: Fisher's exact test when N < 20 or expected cell count < 5; Chi-square otherwise.\n")
 
 # Table 3: Agreed cases - Cardiac vs Noncardiac
 cat("\n\n=== TABLE 3: AGREED CASES - CARDIAC vs NONCARDIAC PMI ===\n")
@@ -753,18 +764,17 @@ print(table3_agreed, nonnormal = nonnormal_vars, showAllLevels = TRUE, formatOpt
 
 # **NEW: Add surgical specialty p-values for Agreed**
 cat("\n\n--- SURGICAL SPECIALTY P-VALUES FOR AGREED CASES ---\n")
-cat("P-values comparing Cardiac vs Noncardiac proportions within each specialty:\n\n")
+cat("P-values from 2x2 table (this specialty vs rest) x (cardiac vs noncardiac):\n\n")
 agreed_specialty_pval_table <- agreed_specialty_results %>%
-  select(Specialty, N_Total, N_Cardiac, N_Noncardiac, P_value_ChiSq, P_value_Fisher) %>%
+  select(Specialty, N_Total, N_Cardiac, N_Noncardiac, P_value) %>%
   rename(
     "Total N" = N_Total,
     "Cardiac N" = N_Cardiac,
     "Noncardiac N" = N_Noncardiac,
-    "P (Chi-square)" = P_value_ChiSq,
-    "P (Fisher)" = P_value_Fisher
+    "P value" = P_value
   )
 print(agreed_specialty_pval_table, row.names = FALSE)
-cat("\nNote: Fisher's exact test is used when N < 20; Chi-square test otherwise.\n")
+cat("\nNote: Fisher's exact test when N < 20 or expected cell count < 5; Chi-square otherwise.\n")
 
 # ========== POSTOPERATIVE VITALS: MORTALITY ANALYSIS ==========
 
@@ -1940,24 +1950,30 @@ surgery_dates_km <- verrichtingen %>%
   group_by(pseudonym_value) %>%
   summarise(surgery_date_verr = min(surgery_date_verr, na.rm = TRUE), .groups = "drop")
 
-km_data <- obs12_with_pmi %>%
-  left_join(
-    opname %>%
-      mutate(
-        opnamedatum = as.Date(opnamedatum),
-        ontslagdatum = as.Date(ontslagdatum),
-        died_in_hospital = opname_bestemming %in% c("Overleden (zonder obductie)", "Overleden (met obductie)")
-      ) %>%
-      group_by(pseudonym_value) %>%
-      summarise(
-        admission_date = min(opnamedatum, na.rm = TRUE),
-        discharge_date = max(ontslagdatum, na.rm = TRUE),
-        died = any(died_in_hospital),
-        .groups = "drop"
-      ),
-    by = c("Pseudonym" = "pseudonym_value")
+# Link to index admission: the opname record whose admission period contains the surgery date
+# This avoids using min/max across multiple admissions which can produce wrong event times
+index_admission <- opname %>%
+  mutate(
+    opnamedatum = as.Date(opnamedatum),
+    ontslagdatum = as.Date(ontslagdatum),
+    died_in_hospital = opname_bestemming %in% c("Overleden (zonder obductie)", "Overleden (met obductie)")
   ) %>%
-  left_join(surgery_dates_km, by = c("Pseudonym" = "pseudonym_value")) %>%
+  inner_join(surgery_dates_km, by = "pseudonym_value") %>%
+  mutate(
+    # Flag admissions that contain the surgery date
+    contains_surgery = surgery_date_verr >= opnamedatum & surgery_date_verr <= ontslagdatum,
+    days_from_surgery = abs(as.numeric(surgery_date_verr - opnamedatum))
+  ) %>%
+  # Prefer the admission containing surgery; if none, closest admission
+  arrange(pseudonym_value, desc(contains_surgery), days_from_surgery) %>%
+  group_by(pseudonym_value) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(pseudonym_value, admission_date = opnamedatum, discharge_date = ontslagdatum,
+         died = died_in_hospital, surgery_date_verr)
+
+km_data <- obs12_with_pmi %>%
+  left_join(index_admission, by = c("Pseudonym" = "pseudonym_value")) %>%
   filter(!is.na(admission_date) & !is.na(surgery_date_verr)) %>%
   mutate(
     # Use performedPeriod_end from verrichtingen as time zero
@@ -2121,25 +2137,9 @@ cat("Addresses informative censoring bias from KM analysis\n")
 cat("Events: 1 = in-hospital death, 2 = discharge alive\n")
 cat("No administrative censoring at 30 days - uses full hospitalisation follow-up\n\n")
 
-# Build competing risks data
+# Build competing risks data - reuse index_admission from KM section
 cr_data <- obs12_with_pmi %>%
-  left_join(
-    opname %>%
-      mutate(
-        opnamedatum = as.Date(opnamedatum),
-        ontslagdatum = as.Date(ontslagdatum),
-        died_in_hospital = opname_bestemming %in% c("Overleden (zonder obductie)", "Overleden (met obductie)")
-      ) %>%
-      group_by(pseudonym_value) %>%
-      summarise(
-        admission_date = min(opnamedatum, na.rm = TRUE),
-        discharge_date = max(ontslagdatum, na.rm = TRUE),
-        died = any(died_in_hospital),
-        .groups = "drop"
-      ),
-    by = c("Pseudonym" = "pseudonym_value")
-  ) %>%
-  left_join(surgery_dates_km, by = c("Pseudonym" = "pseudonym_value")) %>%
+  left_join(index_admission, by = c("Pseudonym" = "pseudonym_value")) %>%
   filter(!is.na(admission_date) & !is.na(surgery_date_verr)) %>%
   mutate(
     surgery_date = surgery_date_verr,
