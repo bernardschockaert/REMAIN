@@ -14,6 +14,10 @@ library(readxl)
 library(dplyr)
 library(irr)
 library(tableone)
+library(survival)
+library(survminer)
+if (!require("cmprsk")) install.packages("cmprsk")
+library(cmprsk)
 
 # Print R and package versions
 cat("\n=== SOFTWARE VERSIONS ===\n")
@@ -31,6 +35,7 @@ demographics <- read_csv("Z:/REMAIN/Data export Datacapture/REMAIN - 2024-06-20 
 postoperativevitals <- read.csv("Z:/REMAIN/Data export Datacapture/REMAIN - metingen_postoperatief_20241010.csv")
 opname <- read_csv("Z:/REMAIN/Data export Datacapture/REMAIN - 2024-06-20 - opname.csv")
 lab <- read_csv("Z:/REMAIN/Data export Datacapture/REMAIN - 2024-06-20 - lab.csv")
+verrichtingen <- read.csv("###") # TODO: fill in the correct path to verrichtingen CSV
 
 #Exclude LOTx, centrale lijn, minor eg gastroscopy, tropo incorrect, recent cardiac surgery/intervention, organ donation and old/insufficient file
 exclude_ids <- c(110014,110015,110028,110033,110051,110067,110068,110083,110096,110099,110100,110114,110117,110126,110131,110143,110148,110159,110160,110162,110166,110183,110187,110198,110205,110210,110214,110221,110222,110225,110230,110238,110251,110261,110270,110279,110287,110289,110300,110306,110308,110318,110330,110343,110347,110349,110352,110357,110368,110376,110378,110379,110382,110398,110399,110408,110416,110418,110431,110432,110443,110445,110451,110455,110456,110458,110470,110476,110487,110491,110515,110521,110544,110550,110553,110567,110573,110577,110586,110588,110608,110609,110614,110627,110635,110644,110669,110686,110694,110707,110719,110722,110726,110743,110747,110752,110753,110765,110774,110776,110783,110789,110827,110841,110864,110873,110876,110878,110879,110884,110891,110899,110908,110911,110914,110920,110922,110930,110931,110933,110941,110943,110948,110951,110953,110970,110973,110981,110983,110985,110987,110993,110995,110998,111001,111005,111009,111011,111012,111014,111026,111030,111032,111034,111038,111049,111053,111055,111056,111064,111070,111075,111076,111082,111087,111097,110248
@@ -1917,6 +1922,893 @@ cat("VAS distribution plot saved as 'VAS_Distribution_by_PMI_Type.png'\n")
 
 cat("\n=== VAS PAIN SCORE ANALYSIS COMPLETE ===\n")
 
+# ========== ANALYSIS 1: KAPLAN-MEIER 30-DAY IN-HOSPITAL MORTALITY ==========
+# Cardiac vs Extracardiac with proper censoring for discharge alive
+
+cat("\n\n=== ANALYSIS 1: KAPLAN-MEIER 30-DAY IN-HOSPITAL MORTALITY ===\n")
+cat("Cardiac vs Extracardiac PMI\n")
+cat("NOTE: Patients who die have event at day of death.\n")
+cat("      Patients discharged alive are censored at day of discharge.\n")
+cat("      Patients still hospitalized at day 30 are censored at day 30.\n\n")
+
+# Build time-to-event data from opname
+# Need: surgery date (from verrichtingen or Date), discharge/death date, and outcome
+km_data <- obs12_with_pmi %>%
+  left_join(
+    opname %>%
+      mutate(
+        opname_begindatum = as.Date(opname_begindatum),
+        opname_einddatum = as.Date(opname_einddatum),
+        died_in_hospital = opname_bestemming %in% c("Overleden (zonder obductie)", "Overleden (met obductie)")
+      ) %>%
+      group_by(pseudonym_value) %>%
+      summarise(
+        admission_date = min(opname_begindatum, na.rm = TRUE),
+        discharge_date = max(opname_einddatum, na.rm = TRUE),
+        died = any(died_in_hospital),
+        .groups = "drop"
+      ),
+    by = c("Pseudonym" = "pseudonym_value")
+  ) %>%
+  filter(!is.na(admission_date)) %>%
+  mutate(
+    # Use Date (troponin/surgery reference date) as time zero
+    surgery_date = as.Date(Date),
+    # Time from surgery to end of follow-up
+    time_to_event = as.numeric(
+      pmin(discharge_date, surgery_date + 30, na.rm = TRUE) - surgery_date
+    ),
+    # Ensure minimum time of 0
+    time_to_event = pmax(time_to_event, 0),
+    # Cap at 30 days
+    time_to_event = pmin(time_to_event, 30),
+    # Status: 1 = death within 30 days, 0 = censored (discharged alive or still hospitalized)
+    km_status = case_when(
+      died & time_to_event <= 30 ~ 1,
+      TRUE ~ 0
+    )
+  ) %>%
+  filter(!is.na(time_to_event) & !is.na(PMI_type))
+
+cat("Patients in KM analysis:", nrow(km_data), "\n")
+cat("  Cardiac PMI:", sum(km_data$PMI_type == "Cardiac"), "\n")
+cat("  Noncardiac PMI:", sum(km_data$PMI_type == "Noncardiac"), "\n")
+cat("  Deaths within 30 days:", sum(km_data$km_status == 1), "\n")
+cat("  Censored (discharged alive or day 30):", sum(km_data$km_status == 0), "\n\n")
+
+# Fit Kaplan-Meier
+km_fit <- survfit(Surv(time_to_event, km_status) ~ PMI_type, data = km_data)
+cat("--- Kaplan-Meier Summary ---\n")
+print(km_fit)
+
+# Log-rank test
+km_logrank <- survdiff(Surv(time_to_event, km_status) ~ PMI_type, data = km_data)
+cat("\n--- Log-rank Test ---\n")
+print(km_logrank)
+km_pvalue <- 1 - pchisq(km_logrank$chisq, length(km_logrank$n) - 1)
+cat("P-value:", format.pval(km_pvalue, digits = 3), "\n")
+
+# Plot KM curve - BJA style
+km_plot <- ggsurvplot(
+  km_fit,
+  data = km_data,
+  risk.table = TRUE,
+  pval = TRUE,
+  conf.int = TRUE,
+  xlim = c(0, 30),
+  break.time.by = 5,
+  palette = c("#E64B35", "#4DBBD5"),
+  legend.labs = c("Cardiac", "Extracardiac"),
+  legend.title = "PMI Aetiology",
+  xlab = "Days from surgery",
+  ylab = "Survival probability",
+  title = "30-Day In-Hospital Mortality: Cardiac vs Extracardiac PMI",
+  subtitle = "Kaplan-Meier curve with 95% CI",
+  ggtheme = theme_minimal() +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(size = 10),
+      legend.position = "bottom"
+    ),
+  risk.table.height = 0.25,
+  risk.table.title = "Number at risk",
+  censor.shape = "+",
+  censor.size = 3
+)
+
+print(km_plot)
+ggsave("KM_30day_Cardiac_vs_Extracardiac.png",
+       plot = print(km_plot, newpage = FALSE),
+       width = 10, height = 8, dpi = 300)
+cat("KM curve saved as 'KM_30day_Cardiac_vs_Extracardiac.png'\n")
+
+cat("\n=== KM ANALYSIS COMPLETE ===\n")
+cat("NOTE: Patients discharged alive before day 30 are censored at discharge.\n")
+cat("      This is visible as '+' marks on the KM curve.\n")
+cat("      This means the KM curve represents probability of remaining alive\n")
+cat("      IN HOSPITAL - not overall survival.\n")
+
+# ========== ANALYSIS 2: COMPETING RISKS ANALYSIS ==========
+# Addresses bias from informative censoring (discharge alive competes with death)
+
+cat("\n\n=== ANALYSIS 2: COMPETING RISKS ANALYSIS (30-DAY IN-HOSPITAL) ===\n")
+cat("Addresses informative censoring bias from KM analysis\n")
+cat("Events: 1 = in-hospital death, 2 = discharge alive, 0 = still hospitalized at day 30\n\n")
+
+# Build competing risks data
+cr_data <- obs12_with_pmi %>%
+  left_join(
+    opname %>%
+      mutate(
+        opname_begindatum = as.Date(opname_begindatum),
+        opname_einddatum = as.Date(opname_einddatum),
+        died_in_hospital = opname_bestemming %in% c("Overleden (zonder obductie)", "Overleden (met obductie)")
+      ) %>%
+      group_by(pseudonym_value) %>%
+      summarise(
+        admission_date = min(opname_begindatum, na.rm = TRUE),
+        discharge_date = max(opname_einddatum, na.rm = TRUE),
+        died = any(died_in_hospital),
+        .groups = "drop"
+      ),
+    by = c("Pseudonym" = "pseudonym_value")
+  ) %>%
+  filter(!is.na(admission_date)) %>%
+  mutate(
+    surgery_date = as.Date(Date),
+    days_to_end = as.numeric(discharge_date - surgery_date),
+    days_to_end = pmax(days_to_end, 0),
+    # Competing risks status: 0 = censored at 30, 1 = death, 2 = discharged alive
+    cr_status = case_when(
+      died & days_to_end <= 30 ~ 1,              # died in hospital within 30 days
+      !died & days_to_end <= 30 ~ 2,             # discharged alive within 30 days
+      TRUE ~ 0                                    # still hospitalized at day 30 (censored)
+    ),
+    cr_time = case_when(
+      cr_status == 0 ~ 30,                       # censored at day 30
+      TRUE ~ pmin(days_to_end, 30)               # event time
+    ),
+    cr_time = pmax(cr_time, 0.5)                 # avoid zero times for CIF estimation
+  ) %>%
+  filter(!is.na(cr_time) & !is.na(PMI_type))
+
+cat("Patients in competing risks analysis:", nrow(cr_data), "\n")
+cat("  Status 0 (still hospitalized at day 30):", sum(cr_data$cr_status == 0), "\n")
+cat("  Status 1 (in-hospital death):", sum(cr_data$cr_status == 1), "\n")
+cat("  Status 2 (discharged alive):", sum(cr_data$cr_status == 2), "\n")
+cat("  Cardiac PMI:", sum(cr_data$PMI_type == "Cardiac"), "\n")
+cat("  Extracardiac PMI:", sum(cr_data$PMI_type == "Noncardiac"), "\n\n")
+
+# --- Cumulative Incidence Functions (CIF) ---
+cat("--- Cumulative Incidence Functions ---\n\n")
+
+# Create group variable
+cr_group <- factor(cr_data$PMI_type, levels = c("Cardiac", "Noncardiac"))
+
+# Calculate CIF
+cif_fit <- cuminc(ftime = cr_data$cr_time,
+                  fstatus = cr_data$cr_status,
+                  group = cr_group)
+
+# Print CIF summary
+cat("CIF estimates at key timepoints:\n")
+cif_summary <- timepoints(cif_fit, times = c(5, 10, 15, 20, 25, 30))
+print(cif_summary)
+
+# --- Gray's Test ---
+cat("\n--- Gray's Test ---\n")
+cat("Comparing cumulative incidence between Cardiac and Extracardiac PMI\n\n")
+
+# Gray's test results are embedded in cuminc output
+gray_tests <- cif_fit$Tests
+cat("Gray's test for in-hospital DEATH:\n")
+cat("  Statistic:", round(gray_tests[1, "stat"], 3), "\n")
+cat("  P-value:", format.pval(gray_tests[1, "pv"], digits = 3), "\n")
+cat("\nGray's test for DISCHARGE ALIVE:\n")
+cat("  Statistic:", round(gray_tests[2, "stat"], 3), "\n")
+cat("  P-value:", format.pval(gray_tests[2, "pv"], digits = 3), "\n\n")
+
+gray_p_death <- gray_tests[1, "pv"]
+gray_p_discharge <- gray_tests[2, "pv"]
+
+# --- Fine-Gray Regression Models ---
+cat("\n--- Fine-Gray Subdistribution Hazard Regression ---\n\n")
+
+# Prepare covariates
+cr_data_fg <- cr_data %>%
+  mutate(
+    cardiac_group = if_else(PMI_type == "Cardiac", 1, 0),
+    age = as.numeric(leeftijd),
+    female = if_else(gender_display == "Vrouw", 1, 0),
+    emergency = as.numeric(emergency_surg)
+  ) %>%
+  filter(!is.na(age) & !is.na(female) & !is.na(emergency))
+
+# --- Models for DEATH (event = 1) ---
+cat("=== DEATH OUTCOME (event = 1) ===\n\n")
+
+# Unadjusted model for death
+cat("Model 1: Unadjusted sHR for Cardiac vs Extracardiac (Death)\n")
+fg_death_unadj <- crr(
+  ftime = cr_data_fg$cr_time,
+  fstatus = cr_data_fg$cr_status,
+  cov1 = cr_data_fg$cardiac_group,
+  failcode = 1,
+  cencode = 0
+)
+cat("  sHR (Cardiac vs Extracardiac):", round(exp(fg_death_unadj$coef), 2), "\n")
+cat("  95% CI: [", round(exp(fg_death_unadj$coef - 1.96 * sqrt(fg_death_unadj$var)), 2),
+    ", ", round(exp(fg_death_unadj$coef + 1.96 * sqrt(fg_death_unadj$var)), 2), "]\n")
+cat("  P-value:", format.pval(fg_death_unadj$coef / sqrt(fg_death_unadj$var) |>
+                                (\(z) 2 * pnorm(abs(z), lower.tail = FALSE))(), digits = 3), "\n")
+print(summary(fg_death_unadj))
+
+# Adjusted model for death
+cat("\nModel 2: Adjusted sHR for Cardiac vs Extracardiac (Death)\n")
+cat("Adjusted for: age, sex, emergency surgery status\n")
+cov_matrix_death <- as.matrix(cr_data_fg[, c("cardiac_group", "age", "female", "emergency")])
+fg_death_adj <- crr(
+  ftime = cr_data_fg$cr_time,
+  fstatus = cr_data_fg$cr_status,
+  cov1 = cov_matrix_death,
+  failcode = 1,
+  cencode = 0
+)
+print(summary(fg_death_adj))
+
+fg_death_adj_results <- data.frame(
+  Variable = c("Cardiac (vs Extracardiac)", "Age (per year)", "Female (vs Male)", "Emergency surgery"),
+  sHR = round(exp(fg_death_adj$coef), 2),
+  CI_lower = round(exp(fg_death_adj$coef - 1.96 * sqrt(diag(fg_death_adj$var))), 2),
+  CI_upper = round(exp(fg_death_adj$coef + 1.96 * sqrt(diag(fg_death_adj$var))), 2),
+  p_value = round(2 * pnorm(abs(fg_death_adj$coef / sqrt(diag(fg_death_adj$var))), lower.tail = FALSE), 4)
+)
+cat("\nAdjusted Fine-Gray model summary (Death):\n")
+print(fg_death_adj_results, row.names = FALSE)
+
+# --- Models for DISCHARGE ALIVE (event = 2) ---
+cat("\n\n=== DISCHARGE ALIVE OUTCOME (event = 2) ===\n\n")
+
+# Unadjusted model for discharge
+cat("Model 3: Unadjusted sHR for Cardiac vs Extracardiac (Discharge Alive)\n")
+fg_discharge_unadj <- crr(
+  ftime = cr_data_fg$cr_time,
+  fstatus = cr_data_fg$cr_status,
+  cov1 = cr_data_fg$cardiac_group,
+  failcode = 2,
+  cencode = 0
+)
+print(summary(fg_discharge_unadj))
+
+# Adjusted model for discharge
+cat("\nModel 4: Adjusted sHR for Cardiac vs Extracardiac (Discharge Alive)\n")
+fg_discharge_adj <- crr(
+  ftime = cr_data_fg$cr_time,
+  fstatus = cr_data_fg$cr_status,
+  cov1 = cov_matrix_death,
+  failcode = 2,
+  cencode = 0
+)
+print(summary(fg_discharge_adj))
+
+fg_discharge_adj_results <- data.frame(
+  Variable = c("Cardiac (vs Extracardiac)", "Age (per year)", "Female (vs Male)", "Emergency surgery"),
+  sHR = round(exp(fg_discharge_adj$coef), 2),
+  CI_lower = round(exp(fg_discharge_adj$coef - 1.96 * sqrt(diag(fg_discharge_adj$var))), 2),
+  CI_upper = round(exp(fg_discharge_adj$coef + 1.96 * sqrt(diag(fg_discharge_adj$var))), 2),
+  p_value = round(2 * pnorm(abs(fg_discharge_adj$coef / sqrt(diag(fg_discharge_adj$var))), lower.tail = FALSE), 4)
+)
+cat("\nAdjusted Fine-Gray model summary (Discharge Alive):\n")
+print(fg_discharge_adj_results, row.names = FALSE)
+
+# --- Publication-Ready Two-Panel CIF Figure (BJA style) ---
+cat("\n--- Creating Publication-Ready CIF Figure ---\n")
+
+# Extract CIF data for plotting
+cif_plot_data <- data.frame(
+  time = numeric(),
+  est = numeric(),
+  group = character(),
+  event = character()
+)
+
+# Extract from cuminc object
+for (nm in names(cif_fit)) {
+  if (nm == "Tests") next
+  parts <- strsplit(nm, " ")[[1]]
+  grp <- parts[1]
+  evt <- parts[2]
+  event_label <- ifelse(evt == "1", "Death", "Discharge Alive")
+  df_tmp <- data.frame(
+    time = cif_fit[[nm]]$time,
+    est = cif_fit[[nm]]$est,
+    group = grp,
+    event = event_label
+  )
+  cif_plot_data <- rbind(cif_plot_data, df_tmp)
+}
+
+# Filter to 0-30 days
+cif_plot_data <- cif_plot_data %>%
+  filter(time <= 30)
+
+# Panel A: Cumulative incidence of in-hospital death
+panel_a_data <- cif_plot_data %>% filter(event == "Death")
+
+panel_a <- ggplot(panel_a_data, aes(x = time, y = est * 100, color = group)) +
+  geom_step(linewidth = 1) +
+  scale_color_manual(
+    values = c("Cardiac" = "#E64B35", "Noncardiac" = "#4DBBD5"),
+    labels = c("Cardiac" = "Cardiac", "Noncardiac" = "Extracardiac")
+  ) +
+  scale_x_continuous(limits = c(0, 30), breaks = seq(0, 30, 5)) +
+  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, 2)) +
+  labs(
+    title = "A) Cumulative Incidence of In-Hospital Death",
+    x = "Days from surgery",
+    y = "Cumulative incidence (%)",
+    color = "PMI Aetiology"
+  ) +
+  annotate("text", x = 15, y = 9,
+           label = paste0("Gray's test p = ", format.pval(gray_p_death, digits = 3)),
+           size = 3.5, hjust = 0) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 11),
+    axis.title = element_text(size = 10),
+    axis.text = element_text(size = 9),
+    legend.position = "bottom",
+    legend.title = element_text(size = 9),
+    panel.grid.minor = element_blank()
+  )
+
+# Panel B: Cumulative incidence of discharge alive
+panel_b_data <- cif_plot_data %>% filter(event == "Discharge Alive")
+
+panel_b <- ggplot(panel_b_data, aes(x = time, y = est * 100, color = group)) +
+  geom_step(linewidth = 1) +
+  scale_color_manual(
+    values = c("Cardiac" = "#E64B35", "Noncardiac" = "#4DBBD5"),
+    labels = c("Cardiac" = "Cardiac", "Noncardiac" = "Extracardiac")
+  ) +
+  scale_x_continuous(limits = c(0, 30), breaks = seq(0, 30, 5)) +
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 20)) +
+  labs(
+    title = "B) Cumulative Incidence of Discharge Alive",
+    x = "Days from surgery",
+    y = "Cumulative incidence (%)",
+    color = "PMI Aetiology"
+  ) +
+  annotate("text", x = 15, y = 90,
+           label = paste0("Gray's test p = ", format.pval(gray_p_discharge, digits = 3)),
+           size = 3.5, hjust = 0) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 11),
+    axis.title = element_text(size = 10),
+    axis.text = element_text(size = 9),
+    legend.position = "bottom",
+    legend.title = element_text(size = 9),
+    panel.grid.minor = element_blank()
+  )
+
+# Combine panels side by side
+if (!require("patchwork")) install.packages("patchwork")
+library(patchwork)
+
+cif_combined <- panel_a + panel_b +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+
+ggsave("CIF_Competing_Risks_Death_Discharge.png",
+       plot = cif_combined,
+       width = 14, height = 6, dpi = 300)
+cat("Publication-ready CIF figure saved as 'CIF_Competing_Risks_Death_Discharge.png'\n")
+print(cif_combined)
+
+cat("\n=== COMPETING RISKS ANALYSIS COMPLETE ===\n")
+
+# ========== ANALYSIS 3: PEAK hsTnT PER PATIENT WITH DAYS AFTER SURGERY ==========
+
+cat("\n\n=== ANALYSIS 3: PEAK hsTnT VALUE PER PATIENT ===\n")
+cat("Highest hsTnT (valueQuantity_value) per unique patient from lab data\n")
+cat("Days to peak calculated from surgery date in verrichtingen\n\n")
+
+# Get surgery date from verrichtingen per pseudonym_value
+surgery_dates <- verrichtingen %>%
+  mutate(
+    surgery_date_verr = as.Date(as.character(verrichting_begindatumtijd))
+  ) %>%
+  group_by(pseudonym_value) %>%
+  summarise(
+    surgery_date_verr = min(surgery_date_verr, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+cat("Patients with surgery dates from verrichtingen:", nrow(surgery_dates), "\n")
+
+# Get peak hsTnT per patient from lab
+peak_hstnt <- lab %>%
+  mutate(
+    valueQuantity_value = as.numeric(gsub(",", ".", valueQuantity_value)),
+    collection_collectedDateTime = as.POSIXct(collection_collectedDateTime),
+    lab_date = as.Date(collection_collectedDateTime)
+  ) %>%
+  filter(!is.na(valueQuantity_value)) %>%
+  group_by(pseudonym_value) %>%
+  arrange(desc(valueQuantity_value)) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(pseudonym_value,
+         peak_hstnt_value = valueQuantity_value,
+         peak_hstnt_datetime = collection_collectedDateTime,
+         peak_hstnt_date = lab_date)
+
+cat("Patients with peak hsTnT data:", nrow(peak_hstnt), "\n")
+
+# Merge with surgery dates and calculate days to peak
+peak_hstnt_with_surgery <- peak_hstnt %>%
+  inner_join(surgery_dates, by = "pseudonym_value") %>%
+  mutate(
+    days_to_peak = as.numeric(peak_hstnt_date - surgery_date_verr)
+  )
+
+cat("Patients with both peak hsTnT and surgery date:", nrow(peak_hstnt_with_surgery), "\n\n")
+
+# Filter to only included patients (obs12_with_pmi)
+peak_hstnt_included <- peak_hstnt_with_surgery %>%
+  inner_join(
+    obs12_with_pmi %>% select(Pseudonym, PMI_type) %>% distinct(),
+    by = c("pseudonym_value" = "Pseudonym")
+  )
+
+cat("Included patients with peak hsTnT data:", nrow(peak_hstnt_included), "\n\n")
+
+# Summary statistics
+cat("--- Peak hsTnT Summary (included patients) ---\n")
+cat("Overall:\n")
+cat("  N:", nrow(peak_hstnt_included), "\n")
+cat("  Median peak hsTnT:", round(median(peak_hstnt_included$peak_hstnt_value, na.rm = TRUE), 1), "\n")
+cat("  IQR:", round(quantile(peak_hstnt_included$peak_hstnt_value, 0.25, na.rm = TRUE), 1), "-",
+    round(quantile(peak_hstnt_included$peak_hstnt_value, 0.75, na.rm = TRUE), 1), "\n")
+cat("  Mean days to peak:", round(mean(peak_hstnt_included$days_to_peak, na.rm = TRUE), 1), "\n")
+cat("  Median days to peak:", round(median(peak_hstnt_included$days_to_peak, na.rm = TRUE), 1), "\n\n")
+
+# By PMI type
+cat("--- Peak hsTnT by PMI Type ---\n")
+peak_hstnt_by_pmi <- peak_hstnt_included %>%
+  group_by(PMI_type) %>%
+  summarise(
+    N = n(),
+    Median_peak_hsTnT = round(median(peak_hstnt_value, na.rm = TRUE), 1),
+    IQR_lower = round(quantile(peak_hstnt_value, 0.25, na.rm = TRUE), 1),
+    IQR_upper = round(quantile(peak_hstnt_value, 0.75, na.rm = TRUE), 1),
+    Mean_days_to_peak = round(mean(days_to_peak, na.rm = TRUE), 1),
+    Median_days_to_peak = round(median(days_to_peak, na.rm = TRUE), 1),
+    .groups = "drop"
+  )
+print(peak_hstnt_by_pmi, n = Inf)
+
+# Detailed table per patient (first 20)
+cat("\n--- Sample: Peak hsTnT per patient (first 20) ---\n")
+print(
+  peak_hstnt_included %>%
+    select(pseudonym_value, PMI_type, peak_hstnt_value, days_to_peak) %>%
+    arrange(desc(peak_hstnt_value)) %>%
+    head(20),
+  n = 20
+)
+
+# Distribution of days to peak
+cat("\n--- Distribution of Days to Peak hsTnT ---\n")
+days_to_peak_dist <- peak_hstnt_included %>%
+  mutate(days_category = case_when(
+    days_to_peak <= 0 ~ "Day 0 (surgery day)",
+    days_to_peak == 1 ~ "Day 1",
+    days_to_peak == 2 ~ "Day 2",
+    days_to_peak == 3 ~ "Day 3",
+    days_to_peak <= 7 ~ "Day 4-7",
+    days_to_peak <= 14 ~ "Day 8-14",
+    TRUE ~ "Day >14"
+  )) %>%
+  count(days_category, sort = FALSE) %>%
+  mutate(Percentage = round(n / sum(n) * 100, 1))
+print(days_to_peak_dist, n = Inf)
+
+# Merge peak hsTnT data back to obs12_with_pmi for downstream use
+obs12_with_pmi <- obs12_with_pmi %>%
+  left_join(
+    peak_hstnt_with_surgery %>%
+      select(pseudonym_value, peak_hstnt_value, days_to_peak),
+    by = c("Pseudonym" = "pseudonym_value")
+  )
+
+cat("\n=== PEAK hsTnT ANALYSIS COMPLETE ===\n")
+
+# ========== ANALYSIS 4: LOGISTIC REGRESSION ON IN-HOSPITAL MORTALITY ==========
+
+cat("\n\n=== ANALYSIS 4: LOGISTIC REGRESSION - IN-HOSPITAL MORTALITY ===\n")
+cat("Comprehensive logistic regression models for in-hospital mortality\n\n")
+
+# Prepare data for logistic regression
+logistic_data <- obs12_with_pmi %>%
+  filter(!is.na(death_in_hospital)) %>%
+  mutate(
+    PMI_type = factor(PMI_type, levels = c("Noncardiac", "Cardiac")),
+    age = as.numeric(leeftijd),
+    female = if_else(gender_display == "Vrouw", 1, 0),
+    emergency = as.numeric(emergency_surg),
+    has_CAD = as.numeric(`history#Coronary Artery Disease`),
+    has_CHF = as.numeric(`history#Chronic Heart Failure`),
+    has_CKD = as.numeric(`history#Chronic Kidney Disease`),
+    has_DM = pmax(as.numeric(`history#Diabetus Mellitus, non-insulin`),
+                  as.numeric(`history#Diabetus Mellitus, insulin dependent`), na.rm = TRUE),
+    has_hypertension = as.numeric(`history#Hypertension`),
+    has_afib = as.numeric(`history#Atrial Fibrilation`),
+    has_COPD = as.numeric(`history#Chronic Obstructive Pulmonary Disease`),
+    hypotension = as.numeric(any_MAP_below_65),
+    tachycardia = as.numeric(any_HR_above_120)
+  )
+
+cat("Patients in logistic regression:", nrow(logistic_data), "\n")
+cat("Deaths:", sum(logistic_data$death_in_hospital == 1), "\n")
+cat("Survivors:", sum(logistic_data$death_in_hospital == 0), "\n\n")
+
+# Model L1: Univariable - PMI type only
+cat("--- Model L1: Univariable (PMI type) ---\n")
+cat("Reference: Noncardiac PMI\n")
+logit_L1 <- glm(death_in_hospital ~ PMI_type, data = logistic_data, family = binomial)
+or_L1 <- exp(cbind(OR = coef(logit_L1), confint(logit_L1)))
+print(summary(logit_L1))
+cat("\nOR (95% CI):\n")
+print(round(or_L1, 3))
+
+# Model L2: Adjusted for age and sex
+cat("\n--- Model L2: Adjusted for age and sex ---\n")
+logit_L2 <- glm(death_in_hospital ~ PMI_type + age + female, data = logistic_data, family = binomial)
+or_L2 <- exp(cbind(OR = coef(logit_L2), confint(logit_L2)))
+print(summary(logit_L2))
+cat("\nOR (95% CI):\n")
+print(round(or_L2, 3))
+
+# Model L3: Adjusted for age, sex, emergency surgery
+cat("\n--- Model L3: Adjusted for age, sex, emergency surgery ---\n")
+logit_L3 <- glm(death_in_hospital ~ PMI_type + age + female + emergency,
+                 data = logistic_data, family = binomial)
+or_L3 <- exp(cbind(OR = coef(logit_L3), confint(logit_L3)))
+print(summary(logit_L3))
+cat("\nOR (95% CI):\n")
+print(round(or_L3, 3))
+
+# Model L4: Full model with comorbidities
+cat("\n--- Model L4: Full multivariable model ---\n")
+cat("Adjusted for: age, sex, emergency, CAD, CHF, CKD, DM, hypertension, RCRI\n")
+logit_L4 <- glm(death_in_hospital ~ PMI_type + age + female + emergency +
+                   has_CAD + has_CHF + has_CKD + has_DM + has_hypertension + RCRI_score,
+                 data = logistic_data, family = binomial)
+or_L4 <- exp(cbind(OR = coef(logit_L4), confint(logit_L4)))
+print(summary(logit_L4))
+cat("\nOR (95% CI):\n")
+print(round(or_L4, 3))
+
+# Model L5: Including postoperative vitals
+cat("\n--- Model L5: Including postoperative hemodynamic instability ---\n")
+logistic_data_vitals <- logistic_data %>%
+  filter(!is.na(hypotension) & !is.na(tachycardia))
+
+logit_L5 <- glm(death_in_hospital ~ PMI_type + age + female + emergency +
+                   has_CAD + has_CHF + has_CKD + RCRI_score +
+                   hypotension + tachycardia,
+                 data = logistic_data_vitals, family = binomial)
+or_L5 <- exp(cbind(OR = coef(logit_L5), confint(logit_L5)))
+print(summary(logit_L5))
+cat("\nOR (95% CI):\n")
+print(round(or_L5, 3))
+
+# Summary comparison table
+cat("\n--- Summary: Cardiac PMI OR across models ---\n")
+model_comparison <- data.frame(
+  Model = c("L1: Univariable",
+            "L2: + age, sex",
+            "L3: + age, sex, emergency",
+            "L4: + comorbidities, RCRI",
+            "L5: + hemodynamic instability"),
+  OR_Cardiac = c(
+    round(or_L1["PMI_typeCardiac", "OR"], 2),
+    round(or_L2["PMI_typeCardiac", "OR"], 2),
+    round(or_L3["PMI_typeCardiac", "OR"], 2),
+    round(or_L4["PMI_typeCardiac", "OR"], 2),
+    round(or_L5["PMI_typeCardiac", "OR"], 2)
+  ),
+  CI_lower = c(
+    round(or_L1["PMI_typeCardiac", 2], 2),
+    round(or_L2["PMI_typeCardiac", 2], 2),
+    round(or_L3["PMI_typeCardiac", 2], 2),
+    round(or_L4["PMI_typeCardiac", 2], 2),
+    round(or_L5["PMI_typeCardiac", 2], 2)
+  ),
+  CI_upper = c(
+    round(or_L1["PMI_typeCardiac", 3], 2),
+    round(or_L2["PMI_typeCardiac", 3], 2),
+    round(or_L3["PMI_typeCardiac", 3], 2),
+    round(or_L4["PMI_typeCardiac", 3], 2),
+    round(or_L5["PMI_typeCardiac", 3], 2)
+  ),
+  AIC = c(AIC(logit_L1), AIC(logit_L2), AIC(logit_L3), AIC(logit_L4), AIC(logit_L5)),
+  N = c(nrow(logistic_data), nrow(logistic_data), nrow(logistic_data),
+        nrow(logistic_data), nrow(logistic_data_vitals))
+)
+print(model_comparison, row.names = FALSE)
+
+# Hosmer-Lemeshow goodness-of-fit for best model
+cat("\n--- Model Fit Assessment (Model L4) ---\n")
+cat("AIC:", AIC(logit_L4), "\n")
+cat("Null deviance:", logit_L4$null.deviance, "on", logit_L4$df.null, "df\n")
+cat("Residual deviance:", logit_L4$deviance, "on", logit_L4$df.residual, "df\n")
+cat("Pseudo R-squared (McFadden):",
+    round(1 - logit_L4$deviance / logit_L4$null.deviance, 3), "\n")
+
+# Forest plot of OR from Model L4
+cat("\n--- Creating Forest Plot (Model L4) ---\n")
+
+forest_data <- data.frame(
+  Variable = names(coef(logit_L4))[-1],
+  OR = exp(coef(logit_L4))[-1],
+  CI_lower = exp(confint(logit_L4))[-1, 1],
+  CI_upper = exp(confint(logit_L4))[-1, 2]
+) %>%
+  mutate(
+    Variable = case_when(
+      Variable == "PMI_typeCardiac" ~ "Cardiac PMI (vs Noncardiac)",
+      Variable == "age" ~ "Age (per year)",
+      Variable == "female" ~ "Female sex",
+      Variable == "emergency" ~ "Emergency surgery",
+      Variable == "has_CAD" ~ "Coronary artery disease",
+      Variable == "has_CHF" ~ "Heart failure",
+      Variable == "has_CKD" ~ "Chronic kidney disease",
+      Variable == "has_DM" ~ "Diabetes mellitus",
+      Variable == "has_hypertension" ~ "Hypertension",
+      Variable == "RCRI_score" ~ "RCRI score (per point)",
+      TRUE ~ Variable
+    )
+  )
+
+forest_plot <- ggplot(forest_data, aes(x = OR, y = reorder(Variable, OR))) +
+  geom_point(size = 3) +
+  geom_errorbarh(aes(xmin = CI_lower, xmax = CI_upper), height = 0.2) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "grey50") +
+  scale_x_log10() +
+  labs(
+    title = "In-Hospital Mortality: Multivariable Logistic Regression",
+    subtitle = "Odds Ratios with 95% CI (Model L4)",
+    x = "Odds Ratio (log scale)",
+    y = ""
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 13),
+    axis.text = element_text(size = 10)
+  )
+
+print(forest_plot)
+ggsave("Forest_Plot_InHospital_Mortality.png",
+       plot = forest_plot,
+       width = 10, height = 6, dpi = 300)
+cat("Forest plot saved as 'Forest_Plot_InHospital_Mortality.png'\n")
+
+cat("\n=== LOGISTIC REGRESSION ANALYSIS COMPLETE ===\n")
+
+# ========== ANALYSIS 5: OBS12 vs AGREED - MISCLASSIFICATION ANALYSIS ==========
+
+cat("\n\n=== ANALYSIS 5: MISCLASSIFICATION ANALYSIS (OBS12 vs AGREED) ===\n")
+cat("Detailed classification of non-agreed cases between OBS12 and OBS34\n")
+cat("Identifies where most disagreements occur\n\n")
+
+# Start from the comparison_pmi object which has both observer assessments
+# Identify non-agreed cases
+nonagreed <- comparison_pmi %>%
+  filter(!agreed | is.na(agreed))
+
+cat("Total patients with both assessments:", nrow(comparison_pmi), "\n")
+cat("Agreed patients:", sum(comparison_pmi$agreed, na.rm = TRUE), "\n")
+cat("Non-agreed patients:", nrow(nonagreed), "\n\n")
+
+# Get detailed sub-aetiology information for non-agreed cases
+nonagreed_detail <- nonagreed %>%
+  left_join(
+    obs12 %>%
+      select(`Participant Id`,
+             extra_12_detail = cause_extra_car,
+             cardiac_12_detail = cause_cardiac,
+             T2MI_12 = cause_T2MI,
+             cause_extra_car_yes_12 = cause_extra_car_yes,
+             Cause_cardiac_yes_12 = Cause_cardiac_yes) %>%
+      distinct(`Participant Id`, .keep_all = TRUE),
+    by = "Participant Id"
+  ) %>%
+  left_join(
+    obs34 %>%
+      select(`Participant Id`,
+             extra_34_detail = cause_extra_car,
+             cardiac_34_detail = cause_cardiac,
+             T2MI_34 = cause_T2MI,
+             cause_extra_car_yes_34 = cause_extra_car_yes,
+             Cause_cardiac_yes_34 = Cause_cardiac_yes) %>%
+      distinct(`Participant Id`, .keep_all = TRUE),
+    by = "Participant Id"
+  ) %>%
+  mutate(
+    # Detailed sub-aetiology for OBS12
+    subaetiology_12 = case_when(
+      cause_extra_car_yes_12 == 1 ~ paste0("Extracardiac: ", extra_12_detail),
+      Cause_cardiac_yes_12 == 1 ~ paste0("Cardiac: ", cardiac_12_detail),
+      T2MI_12 == 1 ~ "Cardiac: T2MI with cause",
+      T2MI_12 == 0 & cause_extra_car_yes_12 == 0 & Cause_cardiac_yes_12 == 0 ~ "Cardiac: T2MI without cause",
+      TRUE ~ "Unknown"
+    ),
+    # Detailed sub-aetiology for OBS34
+    subaetiology_34 = case_when(
+      cause_extra_car_yes_34 == 1 ~ paste0("Extracardiac: ", extra_34_detail),
+      Cause_cardiac_yes_34 == 1 ~ paste0("Cardiac: ", cardiac_34_detail),
+      T2MI_34 == 1 ~ "Cardiac: T2MI with cause",
+      T2MI_34 == 0 & cause_extra_car_yes_34 == 0 & Cause_cardiac_yes_34 == 0 ~ "Cardiac: T2MI without cause",
+      TRUE ~ "Unknown"
+    ),
+    # Direction of disagreement
+    disagreement_direction = case_when(
+      PMI_type_12 == "Cardiac" & PMI_type_34 == "Noncardiac" ~ "OBS12 Cardiac -> OBS34 Extracardiac",
+      PMI_type_12 == "Noncardiac" & PMI_type_34 == "Cardiac" ~ "OBS12 Extracardiac -> OBS34 Cardiac",
+      is.na(PMI_type_12) | is.na(PMI_type_34) ~ "Missing classification",
+      TRUE ~ "Other disagreement"
+    )
+  )
+
+# --- General disagreement direction ---
+cat("--- General Disagreement Direction ---\n")
+disagreement_direction_summary <- nonagreed_detail %>%
+  count(disagreement_direction, sort = TRUE) %>%
+  mutate(Percentage = round(n / sum(n) * 100, 1))
+print(disagreement_direction_summary, n = Inf)
+
+# --- Detailed sub-aetiology disagreement ---
+cat("\n--- Detailed Disagreement Pairs (OBS12 vs OBS34 sub-aetiologies) ---\n")
+disagreement_pairs <- nonagreed_detail %>%
+  count(subaetiology_12, subaetiology_34, sort = TRUE) %>%
+  mutate(Percentage = round(n / sum(n) * 100, 1))
+print(disagreement_pairs, n = Inf)
+
+# --- OBS12 sub-aetiologies in non-agreed cases ---
+cat("\n--- OBS12 Classification in Non-Agreed Cases ---\n")
+obs12_nonagreed_dist <- nonagreed_detail %>%
+  count(subaetiology_12, sort = TRUE) %>%
+  mutate(Percentage = round(n / sum(n) * 100, 1))
+print(obs12_nonagreed_dist, n = Inf)
+
+# --- OBS34 sub-aetiologies in non-agreed cases ---
+cat("\n--- OBS34 Classification in Non-Agreed Cases ---\n")
+obs34_nonagreed_dist <- nonagreed_detail %>%
+  count(subaetiology_34, sort = TRUE) %>%
+  mutate(Percentage = round(n / sum(n) * 100, 1))
+print(obs34_nonagreed_dist, n = Inf)
+
+# --- VISUALIZATION: Alluvial/Sankey-style bar chart of disagreements ---
+cat("\n--- Creating Misclassification Visualization ---\n")
+
+# Bar chart showing disagreement pairs
+# Top N disagreement patterns
+top_disagreements <- disagreement_pairs %>%
+  head(15) %>%
+  mutate(
+    pair_label = paste0(subaetiology_12, "\n-> ", subaetiology_34),
+    # Color by direction
+    direction = case_when(
+      grepl("^Cardiac", subaetiology_12) & grepl("^Extracardiac", subaetiology_34) ~ "Cardiac -> Extracardiac",
+      grepl("^Extracardiac", subaetiology_12) & grepl("^Cardiac", subaetiology_34) ~ "Extracardiac -> Cardiac",
+      grepl("^Cardiac", subaetiology_12) & grepl("^Cardiac", subaetiology_34) ~ "Cardiac subtype disagreement",
+      grepl("^Extracardiac", subaetiology_12) & grepl("^Extracardiac", subaetiology_34) ~ "Extracardiac subtype disagreement",
+      TRUE ~ "Other"
+    )
+  )
+
+misclass_plot <- ggplot(top_disagreements,
+                        aes(x = reorder(pair_label, n), y = n, fill = direction)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  scale_fill_manual(values = c(
+    "Cardiac -> Extracardiac" = "#E64B35",
+    "Extracardiac -> Cardiac" = "#4DBBD5",
+    "Cardiac subtype disagreement" = "#FFB6C1",
+    "Extracardiac subtype disagreement" = "#ADD8E6",
+    "Other" = "#999999"
+  )) +
+  geom_text(aes(label = paste0(n, " (", Percentage, "%)")),
+            hjust = -0.1, size = 3) +
+  labs(
+    title = "Inter-Observer Disagreement Patterns",
+    subtitle = paste0("Non-agreed cases (n=", nrow(nonagreed), "): OBS12 vs OBS34 classifications"),
+    x = "Disagreement pattern\n(OBS12 -> OBS34)",
+    y = "Number of patients",
+    fill = "Direction"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 13),
+    plot.subtitle = element_text(size = 10),
+    axis.text.y = element_text(size = 8),
+    legend.position = "bottom"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2)))
+
+print(misclass_plot)
+ggsave("Misclassification_OBS12_vs_OBS34.png",
+       plot = misclass_plot,
+       width = 14, height = 8, dpi = 300)
+cat("Misclassification plot saved as 'Misclassification_OBS12_vs_OBS34.png'\n")
+
+# --- Summary: Cardiac vs Extracardiac level disagreement ---
+cat("\n--- Cardiac vs Extracardiac Level Disagreement Summary ---\n")
+general_disagreement <- nonagreed_detail %>%
+  filter(!is.na(PMI_type_12) & !is.na(PMI_type_34)) %>%
+  count(PMI_type_12, PMI_type_34, sort = TRUE) %>%
+  mutate(Percentage = round(n / sum(n) * 100, 1))
+print(general_disagreement, n = Inf)
+
+# Stacked bar chart: where does most discussion happen?
+cat("\n--- Creating Summary Disagreement Bar Chart ---\n")
+
+# Per sub-aetiology: how often is it involved in a disagreement?
+subaet_involvement <- bind_rows(
+  nonagreed_detail %>%
+    count(subaetiology = subaetiology_12, name = "n_as_obs12"),
+  nonagreed_detail %>%
+    count(subaetiology = subaetiology_34, name = "n_as_obs34")
+) %>%
+  group_by(subaetiology) %>%
+  summarise(
+    total_involvement = sum(n_as_obs12, na.rm = TRUE) + sum(n_as_obs34, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(total_involvement)) %>%
+  mutate(
+    category = case_when(
+      grepl("^Cardiac", subaetiology) ~ "Cardiac",
+      grepl("^Extracardiac", subaetiology) ~ "Extracardiac",
+      TRUE ~ "Other"
+    )
+  )
+
+involvement_plot <- ggplot(subaet_involvement %>% head(12),
+                           aes(x = reorder(subaetiology, total_involvement),
+                               y = total_involvement,
+                               fill = category)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  scale_fill_manual(values = c("Cardiac" = "#E64B35", "Extracardiac" = "#4DBBD5", "Other" = "#999999")) +
+  geom_text(aes(label = total_involvement), hjust = -0.2, size = 3.5) +
+  labs(
+    title = "Sub-Aetiologies Most Involved in Inter-Observer Disagreement",
+    subtitle = "Frequency of involvement in non-agreed cases (as either OBS12 or OBS34 classification)",
+    x = "Sub-aetiology",
+    y = "Total involvement count",
+    fill = "Category"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 13),
+    plot.subtitle = element_text(size = 9),
+    axis.text.y = element_text(size = 9),
+    legend.position = "bottom"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15)))
+
+print(involvement_plot)
+ggsave("SubAetiology_Disagreement_Involvement.png",
+       plot = involvement_plot,
+       width = 12, height = 7, dpi = 300)
+cat("Sub-aetiology disagreement plot saved as 'SubAetiology_Disagreement_Involvement.png'\n")
+
+cat("\n=== MISCLASSIFICATION ANALYSIS COMPLETE ===\n")
+
 cat("\n=== ANALYSIS COMPLETE ===\n")
 cat("\n✓ Comparison table: OBS12 vs Agreed PMI categories\n")
 cat("✓ PMI category overviews (noncardiac, cardiac, T2MI)\n")
@@ -1939,3 +2831,10 @@ cat("✓ **NEW: Subgroup analysis in elective surgeries only**\n")
 cat("✓ **NEW: Early filters removing NA Pseudonym and NA PMI_category**\n")
 cat("✓ VAS pain score analysis - ONLY scores BEFORE first troponin collection\n")
 cat("✓ 30-day and 365-day mortality analyses removed (only in-hospital mortality used)\n")
+cat("✓ **NEW: 30-day KM curve for in-hospital mortality (cardiac vs extracardiac) with censoring**\n")
+cat("✓ **NEW: Competing risks analysis (CIF, Gray's test, Fine-Gray regression)**\n")
+cat("✓ **NEW: Publication-ready two-panel CIF figure (BJA style)**\n")
+cat("✓ **NEW: Peak hsTnT per patient with days to peak from verrichtingen surgery date**\n")
+cat("✓ **NEW: Comprehensive logistic regression on in-hospital mortality (5 models + forest plot)**\n")
+cat("✓ **NEW: OBS12 vs OBS34 misclassification analysis with detailed sub-aetiology breakdown**\n")
+cat("✓ **NEW: Misclassification visualization showing disagreement patterns**\n")
