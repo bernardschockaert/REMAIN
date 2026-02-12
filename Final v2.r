@@ -2132,6 +2132,23 @@ cr_data_fg <- cr_data %>%
   ) %>%
   filter(!is.na(age) & !is.na(female) & !is.na(emergency))
 
+# Check covariate distributions before modelling
+cat("Covariate distributions in Fine-Gray data:\n")
+cat("  female: ", table(cr_data_fg$female) |> paste(collapse = " / "), "\n")
+cat("  emergency: ", table(cr_data_fg$emergency) |> paste(collapse = " / "), "\n")
+cat("  cardiac_group: ", table(cr_data_fg$cardiac_group) |> paste(collapse = " / "), "\n")
+
+# Identify which covariates have variation (needed for adjusted models)
+fg_adj_covs <- c("cardiac_group", "age", "female", "emergency")
+has_variation <- sapply(fg_adj_covs, function(v) length(unique(cr_data_fg[[v]])) > 1)
+if (!all(has_variation)) {
+  cat("WARNING: The following covariates have no variation and will be dropped: ",
+      paste(fg_adj_covs[!has_variation], collapse = ", "), "\n")
+  fg_adj_covs <- fg_adj_covs[has_variation]
+}
+# Ensure cardiac_group is always included
+if (!"cardiac_group" %in% fg_adj_covs) fg_adj_covs <- c("cardiac_group", fg_adj_covs)
+
 # --- Models for DEATH (event = 1) ---
 cat("=== DEATH OUTCOME (event = 1) ===\n\n")
 
@@ -2153,26 +2170,40 @@ print(summary(fg_death_unadj))
 
 # Adjusted model for death
 cat("\nModel 2: Adjusted sHR for Cardiac vs Extracardiac (Death)\n")
-cat("Adjusted for: age, sex, emergency surgery status\n")
-cov_matrix_death <- as.matrix(cr_data_fg[, c("cardiac_group", "age", "female", "emergency")])
-fg_death_adj <- crr(
-  ftime = cr_data_fg$cr_time,
-  fstatus = cr_data_fg$cr_status,
-  cov1 = cov_matrix_death,
-  failcode = 1,
-  cencode = 0
+cat("Adjusted for:", paste(fg_adj_covs[-1], collapse = ", "), "\n")
+cov_matrix_death <- as.matrix(cr_data_fg[, fg_adj_covs])
+fg_death_adj <- tryCatch(
+  crr(
+    ftime = cr_data_fg$cr_time,
+    fstatus = cr_data_fg$cr_status,
+    cov1 = cov_matrix_death,
+    failcode = 1,
+    cencode = 0
+  ),
+  error = function(e) {
+    cat("WARNING: Adjusted Fine-Gray model for death failed:", conditionMessage(e), "\n")
+    cat("Falling back to unadjusted model.\n")
+    NULL
+  }
 )
-print(summary(fg_death_adj))
 
-fg_death_adj_results <- data.frame(
-  Variable = c("Cardiac (vs Extracardiac)", "Age (per year)", "Female (vs Male)", "Emergency surgery"),
-  sHR = round(exp(fg_death_adj$coef), 2),
-  CI_lower = round(exp(fg_death_adj$coef - 1.96 * sqrt(diag(fg_death_adj$var))), 2),
-  CI_upper = round(exp(fg_death_adj$coef + 1.96 * sqrt(diag(fg_death_adj$var))), 2),
-  p_value = round(2 * pnorm(abs(fg_death_adj$coef / sqrt(diag(fg_death_adj$var))), lower.tail = FALSE), 4)
-)
-cat("\nAdjusted Fine-Gray model summary (Death):\n")
-print(fg_death_adj_results, row.names = FALSE)
+if (!is.null(fg_death_adj)) {
+  print(summary(fg_death_adj))
+
+  fg_adj_labels <- c("Cardiac (vs Extracardiac)", "Age (per year)", "Female (vs Male)", "Emergency surgery")
+  names(fg_adj_labels) <- c("cardiac_group", "age", "female", "emergency")
+  fg_death_adj_results <- data.frame(
+    Variable = fg_adj_labels[fg_adj_covs],
+    sHR = round(exp(fg_death_adj$coef), 2),
+    CI_lower = round(exp(fg_death_adj$coef - 1.96 * sqrt(diag(fg_death_adj$var))), 2),
+    CI_upper = round(exp(fg_death_adj$coef + 1.96 * sqrt(diag(fg_death_adj$var))), 2),
+    p_value = round(2 * pnorm(abs(fg_death_adj$coef / sqrt(diag(fg_death_adj$var))), lower.tail = FALSE), 4)
+  )
+  cat("\nAdjusted Fine-Gray model summary (Death):\n")
+  print(fg_death_adj_results, row.names = FALSE)
+} else {
+  cat("\nSkipping adjusted Fine-Gray model summary for death (model failed).\n")
+}
 
 # --- Models for DISCHARGE ALIVE (event = 2) ---
 cat("\n\n=== DISCHARGE ALIVE OUTCOME (event = 2) ===\n\n")
@@ -2190,24 +2221,38 @@ print(summary(fg_discharge_unadj))
 
 # Adjusted model for discharge
 cat("\nModel 4: Adjusted sHR for Cardiac vs Extracardiac (Discharge Alive)\n")
-fg_discharge_adj <- crr(
-  ftime = cr_data_fg$cr_time,
-  fstatus = cr_data_fg$cr_status,
-  cov1 = cov_matrix_death,
-  failcode = 2,
-  cencode = 0
+cat("Adjusted for:", paste(fg_adj_covs[-1], collapse = ", "), "\n")
+cov_matrix_discharge <- as.matrix(cr_data_fg[, fg_adj_covs])
+fg_discharge_adj <- tryCatch(
+  crr(
+    ftime = cr_data_fg$cr_time,
+    fstatus = cr_data_fg$cr_status,
+    cov1 = cov_matrix_discharge,
+    failcode = 2,
+    cencode = 0
+  ),
+  error = function(e) {
+    cat("WARNING: Adjusted Fine-Gray model for discharge failed:", conditionMessage(e), "\n")
+    cat("Falling back to unadjusted model.\n")
+    NULL
+  }
 )
-print(summary(fg_discharge_adj))
 
-fg_discharge_adj_results <- data.frame(
-  Variable = c("Cardiac (vs Extracardiac)", "Age (per year)", "Female (vs Male)", "Emergency surgery"),
-  sHR = round(exp(fg_discharge_adj$coef), 2),
-  CI_lower = round(exp(fg_discharge_adj$coef - 1.96 * sqrt(diag(fg_discharge_adj$var))), 2),
-  CI_upper = round(exp(fg_discharge_adj$coef + 1.96 * sqrt(diag(fg_discharge_adj$var))), 2),
-  p_value = round(2 * pnorm(abs(fg_discharge_adj$coef / sqrt(diag(fg_discharge_adj$var))), lower.tail = FALSE), 4)
-)
-cat("\nAdjusted Fine-Gray model summary (Discharge Alive):\n")
-print(fg_discharge_adj_results, row.names = FALSE)
+if (!is.null(fg_discharge_adj)) {
+  print(summary(fg_discharge_adj))
+
+  fg_discharge_adj_results <- data.frame(
+    Variable = fg_adj_labels[fg_adj_covs],
+    sHR = round(exp(fg_discharge_adj$coef), 2),
+    CI_lower = round(exp(fg_discharge_adj$coef - 1.96 * sqrt(diag(fg_discharge_adj$var))), 2),
+    CI_upper = round(exp(fg_discharge_adj$coef + 1.96 * sqrt(diag(fg_discharge_adj$var))), 2),
+    p_value = round(2 * pnorm(abs(fg_discharge_adj$coef / sqrt(diag(fg_discharge_adj$var))), lower.tail = FALSE), 4)
+  )
+  cat("\nAdjusted Fine-Gray model summary (Discharge Alive):\n")
+  print(fg_discharge_adj_results, row.names = FALSE)
+} else {
+  cat("\nSkipping adjusted Fine-Gray model summary for discharge (model failed).\n")
+}
 
 # --- Publication-Ready Two-Panel CIF Figure (BJA style) ---
 cat("\n--- Creating Publication-Ready CIF Figure ---\n")
