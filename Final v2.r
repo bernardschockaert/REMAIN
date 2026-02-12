@@ -1962,19 +1962,17 @@ km_data <- obs12_with_pmi %>%
   mutate(
     # Use performedPeriod_end from verrichtingen as time zero
     surgery_date = surgery_date_verr,
-    # Time from surgery to end of follow-up
-    time_to_event = as.numeric(
-      pmin(discharge_date, surgery_date + 30, na.rm = TRUE) - surgery_date
-    ),
-    # Ensure minimum time of 0
-    time_to_event = pmax(time_to_event, 0),
-    # Cap at 30 days
-    time_to_event = pmin(time_to_event, 30),
-    # Status: 1 = death within 30 days, 0 = censored (discharged alive or still hospitalized)
+    # Raw days from surgery to discharge/death
+    raw_days = as.numeric(discharge_date - surgery_date),
+    raw_days = pmax(raw_days, 0),
+    # Status: 1 = death within 30 days, 0 = censored (discharged alive or still hospitalized at day 30)
+    # IMPORTANT: check raw_days BEFORE capping to avoid counting deaths after day 30 as events
     km_status = case_when(
-      died & time_to_event <= 30 ~ 1,
+      died & raw_days <= 30 ~ 1,
       TRUE ~ 0
-    )
+    ),
+    # Time from surgery to end of follow-up (capped at 30 days)
+    time_to_event = pmin(raw_days, 30)
   ) %>%
   filter(!is.na(time_to_event) & !is.na(PMI_type))
 
@@ -2035,6 +2033,85 @@ cat("NOTE: Patients discharged alive before day 30 are censored at discharge.\n"
 cat("      This is visible as '+' marks on the KM curve.\n")
 cat("      This means the KM curve represents probability of remaining alive\n")
 cat("      IN HOSPITAL - not overall survival.\n")
+
+# --- Separate KM Curves: Cardiac and Extracardiac In-Hospital Mortality ---
+cat("\n--- Separate KM Curves by PMI Aetiology ---\n")
+
+# Figure: Cardiac PMI In-Hospital Mortality
+km_cardiac_data <- km_data %>% filter(PMI_type == "Cardiac")
+cat("Cardiac PMI patients:", nrow(km_cardiac_data),
+    "| Deaths:", sum(km_cardiac_data$km_status == 1), "\n")
+
+km_cardiac_fit <- survfit(Surv(time_to_event, km_status) ~ 1, data = km_cardiac_data)
+
+km_cardiac_plot <- ggsurvplot(
+  km_cardiac_fit,
+  data = km_cardiac_data,
+  risk.table = TRUE,
+  conf.int = TRUE,
+  xlim = c(0, 30),
+  break.time.by = 5,
+  palette = "#E64B35",
+  xlab = "Days from surgery",
+  ylab = "Survival probability",
+  title = "30-Day In-Hospital Mortality: Cardiac PMI",
+  subtitle = paste0("n = ", nrow(km_cardiac_data),
+                     ", deaths = ", sum(km_cardiac_data$km_status == 1)),
+  ggtheme = theme_minimal() +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(size = 10),
+      legend.position = "none"
+    ),
+  risk.table.height = 0.25,
+  risk.table.title = "Number at risk",
+  censor.shape = "+",
+  censor.size = 3
+)
+
+print(km_cardiac_plot)
+ggsave("KM_30day_Cardiac_PMI.png",
+       plot = print(km_cardiac_plot, newpage = FALSE),
+       width = 10, height = 8, dpi = 300)
+cat("Saved as 'KM_30day_Cardiac_PMI.png'\n")
+
+# Figure: Extracardiac PMI In-Hospital Mortality
+km_extra_data <- km_data %>% filter(PMI_type == "Noncardiac")
+cat("Extracardiac PMI patients:", nrow(km_extra_data),
+    "| Deaths:", sum(km_extra_data$km_status == 1), "\n")
+
+km_extra_fit <- survfit(Surv(time_to_event, km_status) ~ 1, data = km_extra_data)
+
+km_extra_plot <- ggsurvplot(
+  km_extra_fit,
+  data = km_extra_data,
+  risk.table = TRUE,
+  conf.int = TRUE,
+  xlim = c(0, 30),
+  break.time.by = 5,
+  palette = "#4DBBD5",
+  xlab = "Days from surgery",
+  ylab = "Survival probability",
+  title = "30-Day In-Hospital Mortality: Extracardiac PMI",
+  subtitle = paste0("n = ", nrow(km_extra_data),
+                     ", deaths = ", sum(km_extra_data$km_status == 1)),
+  ggtheme = theme_minimal() +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(size = 10),
+      legend.position = "none"
+    ),
+  risk.table.height = 0.25,
+  risk.table.title = "Number at risk",
+  censor.shape = "+",
+  censor.size = 3
+)
+
+print(km_extra_plot)
+ggsave("KM_30day_Extracardiac_PMI.png",
+       plot = print(km_extra_plot, newpage = FALSE),
+       width = 10, height = 8, dpi = 300)
+cat("Saved as 'KM_30day_Extracardiac_PMI.png'\n")
 
 # ========== ANALYSIS 2: COMPETING RISKS ANALYSIS ==========
 # Addresses bias from informative censoring (discharge alive competes with death)
